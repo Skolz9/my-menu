@@ -1,0 +1,6 @@
+{
+  "name": "My Menu — Menu QR Digital pour Cafés & Restaurants au Maroc",
+  "description": "Créez votre menu digital QR code pour café et restaurant au Maroc (Agadir, Casablanca, Marrakech). Sans application, 0% commission, mise à jour instantanée en Arabe, Français et Anglais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
