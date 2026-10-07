@@ -21,7 +21,7 @@ export const config = {
   instagram: 'https://instagram.com/mymenu.ma',
   instagramHandle: '@mymenu.ma',
   email: 'contact@webatlass.com',
-  baseUrl: 'https://mymenu.ma',
+  baseUrl: 'https://my-menu-livid.vercel.app/',
   defaultLanguage: 'ar' as 'ar' | 'fr' | 'en',
 
   colors: {
