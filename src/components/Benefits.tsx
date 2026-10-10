@@ -4,6 +4,7 @@ import { Zap, Camera, Languages, Check, ArrowUpRight } from 'lucide-react';
 import { config } from '../config';
 import { useLanguage } from '../i18n/LanguageContext';
 import { demoMenu, getLocalized, type Language } from '../menus';
+import { PriceDisplay } from './PriceDisplay';
 
 const SHOWCASE_COLORS = [
   '#6BBF3A',
@@ -221,7 +222,7 @@ export const Benefits: React.FC = () => {
                               />
                             )}
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-neutral-900 truncate">
+                              <p className="text-xs font-bold text-neutral-900 line-clamp-2 leading-snug">
                                 {getLocalized(item.name, previewLang)}
                               </p>
                               <p className="text-[11px] text-neutral-500 line-clamp-1">
@@ -229,12 +230,12 @@ export const Benefits: React.FC = () => {
                               </p>
                             </div>
                           </div>
-                          <span
-                            className="text-xs font-extrabold px-2.5 py-1 rounded-lg text-white tabular-nums shrink-0"
+                          <PriceDisplay
+                            amount={item.price}
+                            lang={previewLang}
+                            className="text-xs font-extrabold px-2.5 py-1 rounded-lg text-white shrink-0"
                             style={{ backgroundColor: previewColor }}
-                          >
-                            {item.price} MAD
-                          </span>
+                          />
                         </div>
                       );
                     })}

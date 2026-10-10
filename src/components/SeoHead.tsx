@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { config } from '../config';
+import { config, getBaseUrl } from '../config';
 import { translations } from '../i18n/translations';
 import { getMenuBySlug, getLocalized, type ClientMenu, type Language } from '../menus';
 
@@ -15,6 +15,7 @@ export interface RouteSeoMetadata {
 
 export function buildLandingJsonLd(lang: Language = 'ar') {
   const t = translations[lang];
+  const baseUrl = getBaseUrl();
   const cleanPhone = `+${config.whatsappNumber.replace(/[^0-9]/g, '')}`;
 
   const organizationSchema = {
@@ -22,8 +23,8 @@ export function buildLandingJsonLd(lang: Language = 'ar') {
     '@type': 'Organization',
     name: config.brandName,
     legalName: config.agencyName,
-    url: config.baseUrl,
-    logo: `${config.baseUrl}/favicon.svg`,
+    url: baseUrl,
+    logo: `${baseUrl}/favicon.svg`,
     email: config.email,
     telephone: cleanPhone,
     sameAs: [config.instagram],
@@ -48,7 +49,7 @@ export function buildLandingJsonLd(lang: Language = 'ar') {
     provider: {
       '@type': 'Organization',
       name: config.brandName,
-      url: config.baseUrl,
+      url: baseUrl,
     },
     areaServed: {
       '@type': 'Country',
@@ -61,7 +62,7 @@ export function buildLandingJsonLd(lang: Language = 'ar') {
       price: String(config.pricing.monthlyPrice),
       priceCurrency: config.pricing.currency,
       availability: 'https://schema.org/InStock',
-      url: `${config.baseUrl}/#pricing`,
+      url: `${baseUrl}/#pricing`,
     },
   };
 
@@ -82,7 +83,8 @@ export function buildLandingJsonLd(lang: Language = 'ar') {
 }
 
 export function buildMenuJsonLd(menu: ClientMenu, lang: Language = menu.defaultLanguage) {
-  const menuUrl = `${config.baseUrl}/m/${menu.slug}`;
+  const baseUrl = getBaseUrl();
+  const menuUrl = `${baseUrl}/m/${menu.slug}`;
   const cleanWhatsapp = `+${menu.contact.whatsapp.replace(/[^0-9]/g, '')}`;
 
   const menuSchema = {
@@ -138,12 +140,13 @@ export function buildMenuJsonLd(menu: ClientMenu, lang: Language = menu.defaultL
 export function getRouteSeoData(pathname: string, lang: Language = 'ar'): RouteSeoMetadata {
   const normalizedPath = pathname === '/' ? '/' : pathname.replace(/\/+$/, '');
   const t = translations[lang];
+  const baseUrl = getBaseUrl();
 
   if (normalizedPath === '/') {
     return {
       title: t.seo.title,
       description: t.seo.description,
-      canonicalUrl: `${config.baseUrl}/`,
+      canonicalUrl: `${baseUrl}/`,
       ogImage: config.images.ogBanner,
       ogType: 'website',
       robots: 'index, follow',
@@ -159,7 +162,7 @@ export function getRouteSeoData(pathname: string, lang: Language = 'ar'): RouteS
       return {
         title: `${menu.name} (${menu.city}) — Menu QR Digital | ${config.brandName}`,
         description: `${menu.name} à ${menu.city} : ${tagline}. Consultez notre carte digitale complète avec prix en ${menu.currency}.`,
-        canonicalUrl: `${config.baseUrl}/m/${menu.slug}`,
+        canonicalUrl: `${baseUrl}/m/${menu.slug}`,
         ogImage: menu.logo || config.images.ogBanner,
         ogType: 'restaurant.menu',
         robots: 'index, follow',
@@ -172,7 +175,7 @@ export function getRouteSeoData(pathname: string, lang: Language = 'ar'): RouteS
     return {
       title: `QR Code Studio — ${config.brandName} Admin`,
       description: `Outil privé de génération de QR codes et chevalets A5 pour ${config.brandName}.`,
-      canonicalUrl: `${config.baseUrl}/admin/qr`,
+      canonicalUrl: `${baseUrl}/admin/qr`,
       ogImage: config.images.ogBanner,
       ogType: 'website',
       robots: 'noindex, nofollow',
@@ -182,7 +185,7 @@ export function getRouteSeoData(pathname: string, lang: Language = 'ar'): RouteS
   return {
     title: `${t.notFound.title} | ${config.brandName}`,
     description: t.notFound.description,
-    canonicalUrl: `${config.baseUrl}${normalizedPath}`,
+    canonicalUrl: `${baseUrl}${normalizedPath}`,
     ogImage: config.images.ogBanner,
     ogType: 'website',
     robots: 'noindex, nofollow',

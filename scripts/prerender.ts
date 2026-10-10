@@ -26,6 +26,7 @@ async function runPrerender() {
   const ssrEntryPath = path.join(ssrDir, 'entry-server.js');
   const { renderRoute, allMenus, config } = await import(ssrEntryPath);
 
+  const baseUrl = String(config.baseUrl).replace(/\/+$/, '');
   const menuRoutes: string[] = allMenus.map((m: { slug: string }) => `/m/${m.slug}`);
   const routesToPrerender = ['/', ...menuRoutes, '/admin/qr', '/404'];
 
@@ -85,7 +86,7 @@ async function runPrerender() {
       );
 
     // Update hreflang links per route
-    const routeUrl = route === '/' ? `${config.baseUrl}/` : `${config.baseUrl}${route}`;
+    const routeUrl = route === '/' ? `${baseUrl}/` : `${baseUrl}${route}`;
     pageHtml = pageHtml
       .replace(
         /<link rel="alternate" hreflang="ar-MA" href=".*?" \/>/,
@@ -126,7 +127,7 @@ async function runPrerender() {
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${publicRoutes
   .map((r) => {
-    const loc = r === '/' ? `${config.baseUrl}/` : `${config.baseUrl}${r}`;
+    const loc = r === '/' ? `${baseUrl}/` : `${baseUrl}${r}`;
     const priority = r === '/' ? '1.0' : '0.8';
     return `  <url>
     <loc>${loc}</loc>
@@ -149,7 +150,7 @@ Allow: /
 Disallow: /admin/
 Disallow: /admin/qr
 
-Sitemap: ${config.baseUrl}/sitemap.xml
+Sitemap: ${baseUrl}/sitemap.xml
 `;
 
   fs.mkdirSync(publicDir, { recursive: true });

@@ -1,10 +1,19 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { config, getWhatsAppUrl } from '../config';
 import { useLanguage } from '../i18n/LanguageContext';
 
 export const FloatingWhatsApp: React.FC = () => {
   const { t, dir } = useLanguage();
+  const location = useLocation();
+
+  // Hide agency floating WhatsApp button on client menu pages (/m/:slug) and admin QR page
+  // so it never overlaps the mobile sticky bottom cart bar and keeps client menus white-labeled.
+  if (location.pathname.startsWith('/m/') || location.pathname.startsWith('/admin')) {
+    return null;
+  }
+
   const whatsappUrl = getWhatsAppUrl(t.nav.whatsappDefaultMsg, config.whatsappNumber);
 
   return (

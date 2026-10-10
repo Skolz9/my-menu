@@ -13,7 +13,7 @@ import {
   ArrowLeft,
   Check,
 } from 'lucide-react';
-import { config } from '../config';
+import { config, getBaseUrl } from '../config';
 import { allMenus, getLocalized, type ClientMenu } from '../menus';
 import { BrandLogo } from './BrandLogo';
 import { SeoHead } from './SeoHead';
@@ -134,7 +134,7 @@ export const QrGenerator: React.FC = () => {
 
   const [selectedSlug, setSelectedSlug] = useState<string>(defaultMenu?.slug || 'custom');
   const [targetUrl, setTargetUrl] = useState<string>(
-    defaultMenu ? `${config.baseUrl}/m/${defaultMenu.slug}` : config.baseUrl
+    defaultMenu ? `${getBaseUrl()}/m/${defaultMenu.slug}` : getBaseUrl()
   );
   const [fgColor, setFgColor] = useState<string>(
     defaultMenu?.colors.primary || config.colors.primary
@@ -164,7 +164,7 @@ export const QrGenerator: React.FC = () => {
     }
     const found = allMenus.find((m) => m.slug === slugOrCustom);
     if (found) {
-      setTargetUrl(`${config.baseUrl}/m/${found.slug}`);
+      setTargetUrl(`${getBaseUrl()}/m/${found.slug}`);
       setFgColor(found.colors.primary);
       setLogoUrl(found.logo);
       if (includeLogo) {

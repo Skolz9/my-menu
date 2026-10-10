@@ -141,6 +141,10 @@ export const config = {
   },
 };
 
+export function getBaseUrl(): string {
+  return config.baseUrl.replace(/\/+$/, '');
+}
+
 /**
  * Helper to generate a WhatsApp click-to-chat URL using the single-source-of-truth
  * agency WhatsApp number (or a client restaurant's own number when specified).

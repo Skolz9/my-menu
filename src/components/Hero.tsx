@@ -4,6 +4,7 @@ import { Check, MessageCircle, ArrowUpRight, QrCode, Sparkles, Utensils } from '
 import { config, getWhatsAppUrl } from '../config';
 import { useLanguage } from '../i18n/LanguageContext';
 import { demoMenu, getLocalized } from '../menus';
+import { PriceDisplay } from './PriceDisplay';
 
 const GeometricLogoIcon: React.FC<{ shape: string; color: string }> = ({ shape, color }) => {
   switch (shape) {
@@ -232,17 +233,19 @@ export const Hero: React.FC = () => {
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-neutral-900 truncate">
+                            <p className="text-xs font-bold text-neutral-900 line-clamp-2 leading-snug">
                               {getLocalized(item.name, lang)}
                             </p>
-                            <p className="text-[11px] text-neutral-500 truncate">
+                            <p className="text-[11px] text-neutral-500 line-clamp-1">
                               {getLocalized(item.description, lang)}
                             </p>
                           </div>
                         </div>
-                        <span className="text-xs font-extrabold text-neutral-950 tabular-nums whitespace-nowrap px-2 py-1 rounded-lg bg-white border border-neutral-200">
-                          {item.price} MAD
-                        </span>
+                        <PriceDisplay
+                          amount={item.price}
+                          lang={lang}
+                          className="text-xs font-extrabold text-neutral-950 px-2 py-1 rounded-lg bg-white border border-neutral-200 shrink-0"
+                        />
                       </Link>
                     ))}
                   </div>

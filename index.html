@@ -2,6 +2,64 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        try {
+          var currentFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : window.fetch;
+          var protoDesc =
+            typeof Window !== 'undefined' && Window.prototype
+              ? Object.getOwnPropertyDescriptor(Window.prototype, 'fetch')
+              : undefined;
+          if (protoDesc && protoDesc.configurable !== false && protoDesc.get && !protoDesc.set) {
+            Object.defineProperty(Window.prototype, 'fetch', {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return currentFetch;
+              },
+              set: function (val) {
+                if (typeof val === 'function') {
+                  currentFetch = val;
+                }
+              },
+            });
+          }
+          var winDesc = Object.getOwnPropertyDescriptor(window, 'fetch');
+          if (!winDesc || winDesc.configurable !== false) {
+            Object.defineProperty(window, 'fetch', {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return currentFetch;
+              },
+              set: function (val) {
+                if (typeof val === 'function') {
+                  currentFetch = val;
+                }
+              },
+            });
+          }
+        } catch (_e) {}
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            var msg = (e && e.message) || '';
+            var file = (e && e.filename) || '';
+            if (
+              msg.indexOf('Cannot set property fetch') !== -1 ||
+              file.indexOf('chrome-extension://') === 0 ||
+              file.indexOf('moz-extension://') === 0
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return false;
+            }
+          },
+          true
+        );
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Menu — منيو QR رقمي للمقاهي والمطاعم في المغرب | Menu QR Maroc</title>
     <meta name="description" content="منيو QR مقهى المغرب جاهز في دقائق بدون طباعة وبدون عمولة. Création menu QR code café et restaurant au Maroc (Agadir, Casablanca, Marrakech) en Arabe, Français et Anglais." />

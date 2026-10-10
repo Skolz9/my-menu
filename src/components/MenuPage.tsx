@@ -1,45 +1,147 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Flame, QrCode, Sparkles, ArrowUpRight } from 'lucide-react';
 import {
-  Search,
-  X,
-  Clock,
-  MapPin,
-  Phone,
-  MessageCircle,
-  Instagram,
-  ShoppingBag,
-  Trash2,
-  QrCode,
-  ExternalLink,
-} from 'lucide-react';
-import { getMenuBySlug, getLocalized, type Language, type MenuItem } from '../menus';
+  getMenuBySlug,
+  getLocalized,
+  checkBusinessOpenStatus,
+  type Language,
+  type MenuItem,
+  type OrderType,
+} from '../menus';
+import { getBaseUrl } from '../config';
 import { translations } from '../i18n/translations';
-import { getWhatsAppUrl } from '../config';
 import { CategoryTabs } from './CategoryTabs';
 import { MenuItemCard } from './MenuItemCard';
-import { LanguageSwitcher } from './LanguageSwitcher';
+import { BusinessProfileCard } from './BusinessProfileCard';
+import { CartPanel, type CustomerDetails } from './CartPanel';
+import {
+  ItemDetailModal,
+  ShowToWaiterModal,
+  MenuQrModal,
+  getDefaultSelectedOptions,
+  buildCartKey,
+  computeItemUnitPrice,
+  type CartLineItem,
+} from './MenuModals';
+import { PriceDisplay } from './PriceDisplay';
 import { SeoHead } from './SeoHead';
 import { NotFoundPage } from './NotFoundPage';
+
+const CUSTOMER_STORAGE_KEY = 'mymenu_customer_details_v1';
 
 export const MenuPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const menu = getMenuBySlug(slug);
 
-  const [menuLang, setMenuLang] = useState<Language>(menu?.defaultLanguage || 'ar');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategoryId, setActiveCategoryId] = useState<string>(
-    menu?.categories[0]?.id || ''
+  const [menuLang, setMenuLang] = useState<Language>(
+    menu?.defaultLanguage || 'ar'
   );
-  const [cart, setCart] = useState<Record<string, number>>({});
-  const [cartOpen, setCartOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategoryId, setActiveCategoryId] = useState<string>('popular');
+  const [cartLines, setCartLines] = useState<CartLineItem[]>([]);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  // Modals state
+  const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
+  const [waiterModalOpen, setWaiterModalOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+
+  // Open / Closed live status + simulation toggle
+  const [simulateClosed, setSimulateClosed] = useState(false);
+
+  // Order type state
+  const defaultOrderType: OrderType = useMemo(() => {
+    if (!menu) return 'dineIn';
+    if (menu.orderTypes.dineIn) return 'dineIn';
+    if (menu.orderTypes.takeaway) return 'takeaway';
+    return 'delivery';
+  }, [menu]);
+
+  const [orderType, setOrderType] = useState<OrderType>(defaultOrderType);
+
+  // Customer details with localStorage persistence (try/catch)
+  const [customer, setCustomer] = useState<CustomerDetails>(() => ({
+    name: '',
+    phone: '',
+    address: '',
+    locationLink: '',
+    deliveryZoneId: menu?.delivery.zones[0]?.id || '',
+    tableNumber: '',
+  }));
+  const [hasSavedDetails, setHasSavedDetails] = useState(false);
+
+  // Load saved customer details on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<CustomerDetails>;
+        setCustomer((prev) => ({
+          ...prev,
+          name: parsed.name || '',
+          phone: parsed.phone || '',
+          address: parsed.address || '',
+          deliveryZoneId:
+            parsed.deliveryZoneId || menu?.delivery.zones[0]?.id || '',
+        }));
+        if (parsed.name || parsed.phone || parsed.address) {
+          setHasSavedDetails(true);
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [menu]);
+
+  const handleCustomerChange = (patch: Partial<CustomerDetails>) => {
+    setCustomer((prev) => {
+      const next = { ...prev, ...patch };
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            CUSTOMER_STORAGE_KEY,
+            JSON.stringify({
+              name: next.name,
+              phone: next.phone,
+              address: next.address,
+              deliveryZoneId: next.deliveryZoneId,
+            })
+          );
+          if (next.name || next.phone || next.address) {
+            setHasSavedDetails(true);
+          }
+        } catch {
+          // Ignore storage errors
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleForgetDetails = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    setCustomer({
+      name: '',
+      phone: '',
+      address: '',
+      locationLink: '',
+      deliveryZoneId: menu?.delivery.zones[0]?.id || '',
+      tableNumber: '',
+    });
+    setHasSavedDetails(false);
+  };
 
   useEffect(() => {
     if (menu) {
       setMenuLang(menu.defaultLanguage);
-      if (menu.categories[0]) {
-        setActiveCategoryId(menu.categories[0].id);
-      }
     }
   }, [menu]);
 
@@ -50,7 +152,30 @@ export const MenuPage: React.FC = () => {
     }
   }, [menuLang]);
 
-  // Highlight active category while scrolling
+  const popularItems = useMemo(() => {
+    if (!menu) return [];
+    const list: MenuItem[] = [];
+    for (const cat of menu.categories) {
+      for (const item of cat.items) {
+        if (item.popular || item.badges?.includes('popular')) {
+          list.push(item);
+        }
+      }
+    }
+    return list;
+  }, [menu]);
+
+  // Set initial active category tab
+  useEffect(() => {
+    if (!menu) return;
+    if (popularItems.length > 0) {
+      setActiveCategoryId('popular');
+    } else if (menu.categories[0]) {
+      setActiveCategoryId(menu.categories[0].id);
+    }
+  }, [menu, popularItems.length]);
+
+  // Scroll-spy for category sections
   useEffect(() => {
     if (!menu || typeof window === 'undefined' || !('IntersectionObserver' in window)) {
       return;
@@ -69,10 +194,13 @@ export const MenuPage: React.FC = () => {
         }
       },
       {
-        rootMargin: '-110px 0px -65% 0px',
+        rootMargin: '-120px 0px -65% 0px',
         threshold: 0.05,
       }
     );
+
+    const popularEl = document.getElementById('cat-popular');
+    if (popularEl) observer.observe(popularEl);
 
     menu.categories.forEach((cat) => {
       const el = document.getElementById(`cat-${cat.id}`);
@@ -80,7 +208,7 @@ export const MenuPage: React.FC = () => {
     });
 
     return () => observer.disconnect();
-  }, [menu, searchQuery]);
+  }, [menu, searchQuery, popularItems.length]);
 
   const filteredCategories = useMemo(() => {
     if (!menu) return [];
@@ -99,32 +227,34 @@ export const MenuPage: React.FC = () => {
       .filter((cat) => cat.items.length > 0);
   }, [menu, searchQuery, menuLang]);
 
-  const allItemsMap = useMemo(() => {
-    const map: Record<string, MenuItem> = {};
-    if (!menu) return map;
-    for (const cat of menu.categories) {
-      for (const item of cat.items) {
-        map[item.id] = item;
-      }
+  // Map itemId -> total quantity in cart across all option variations
+  const itemQuantityMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const line of cartLines) {
+      map[line.item.id] = (map[line.item.id] || 0) + line.quantity;
     }
     return map;
-  }, [menu]);
+  }, [cartLines]);
 
-  const cartEntries = useMemo(() => {
-    return Object.entries(cart)
-      .filter(([, qty]) => qty > 0)
-      .map(([id, qty]) => ({
-        item: allItemsMap[id],
-        qty,
-      }))
-      .filter((entry) => Boolean(entry.item));
-  }, [cart, allItemsMap]);
-
-  const totalCount = cartEntries.reduce((acc, curr) => acc + curr.qty, 0);
-  const totalPrice = cartEntries.reduce(
-    (acc, curr) => acc + curr.item.price * curr.qty,
-    0
-  );
+  // Upsell items (2 items from menu.upsellItemIds not yet in cart, or top available)
+  const upsellItems = useMemo(() => {
+    if (!menu || !menu.upsellItemIds) return [];
+    const allItems: Record<string, MenuItem> = {};
+    for (const cat of menu.categories) {
+      for (const item of cat.items) {
+        allItems[item.id] = item;
+      }
+    }
+    return menu.upsellItemIds
+      .map((id) => allItems[id])
+      .filter(
+        (item): item is MenuItem =>
+          Boolean(item) &&
+          !item.badges?.includes('soldout') &&
+          !itemQuantityMap[item.id]
+      )
+      .slice(0, 2);
+  }, [menu, itemQuantityMap]);
 
   if (!menu) {
     return <NotFoundPage />;
@@ -133,292 +263,349 @@ export const MenuPage: React.FC = () => {
   const t = translations[menuLang].menuPage;
   const dir = menuLang === 'ar' ? 'rtl' : 'ltr';
 
+  const liveStatus = checkBusinessOpenStatus(menu.weeklyHours);
+  const isOpen = simulateClosed ? false : liveStatus.isOpen;
+
+  const formatItemCountLabel = (count: number) => {
+    const label = count === 1 ? t.itemCountSingle : t.itemCountPlural;
+    return `${count} ${label}`;
+  };
+
   const handleSelectCategory = (catId: string) => {
     setActiveCategoryId(catId);
     if (typeof document !== 'undefined') {
       const target = document.getElementById(`cat-${catId}`);
       if (target) {
-        const y = target.getBoundingClientRect().top + window.scrollY - 72;
+        const y = target.getBoundingClientRect().top + window.scrollY - 118;
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }
   };
 
-  const addItem = (itemId: string) => {
-    setCart((prev) => ({ ...prev, [itemId]: (prev[itemId] || 0) + 1 }));
-  };
-
-  const removeItem = (itemId: string) => {
-    setCart((prev) => {
-      const next = { ...prev };
-      if ((next[itemId] || 0) <= 1) {
-        delete next[itemId];
-      } else {
-        next[itemId] -= 1;
+  // Add item with specific options & note (from ItemDetailModal or default card stepper)
+  const handleAddWithOptions = (
+    item: MenuItem,
+    quantityToAdd: number,
+    selectedOptions: Record<string, string[]>,
+    note: string
+  ) => {
+    const cartKey = buildCartKey(item.id, selectedOptions);
+    setCartLines((prev) => {
+      const existingIdx = prev.findIndex((l) => l.cartKey === cartKey);
+      if (existingIdx > -1) {
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          quantity: updated[existingIdx].quantity + quantityToAdd,
+          note: note.trim() ? note : updated[existingIdx].note,
+        };
+        return updated;
       }
-      return next;
+      return [
+        ...prev,
+        {
+          cartKey,
+          item,
+          quantity: quantityToAdd,
+          selectedOptions,
+          note,
+        },
+      ];
     });
   };
 
-  const buildOrderWhatsAppUrl = () => {
-    const lines = [
-      `${t.orderWhatsappHeader} *${menu.name}* :`,
-      '',
-      ...cartEntries.map(
-        ({ item, qty }) =>
-          `• ${qty}x ${getLocalized(item.name, menuLang)} — ${item.price * qty} ${menu.currency}`
-      ),
-      '',
-      `*${t.orderWhatsappTotal} : ${totalPrice} ${menu.currency}*`,
-    ];
-    return getWhatsAppUrl(lines.join('\n'), menu.contact.whatsapp);
+  // Direct card "+" button
+  const handleCardIncrement = (item: MenuItem) => {
+    const defaultOpts = getDefaultSelectedOptions(item);
+    handleAddWithOptions(item, 1, defaultOpts, '');
   };
 
-  const directContactWhatsAppUrl = getWhatsAppUrl(
-    `Salam ${menu.name}`,
-    menu.contact.whatsapp
+  // Direct card "-" button (decrements the most recent cart line for this item)
+  const handleCardDecrement = (item: MenuItem) => {
+    setCartLines((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].item.id === item.id) {
+          const next = [...prev];
+          if (next[i].quantity <= 1) {
+            next.splice(i, 1);
+          } else {
+            next[i] = { ...next[i], quantity: next[i].quantity - 1 };
+          }
+          return next;
+        }
+      }
+      return prev;
+    });
+  };
+
+  const handleIncrementLine = (cartKey: string) => {
+    setCartLines((prev) =>
+      prev.map((l) =>
+        l.cartKey === cartKey ? { ...l, quantity: l.quantity + 1 } : l
+      )
+    );
+  };
+
+  const handleDecrementLine = (cartKey: string) => {
+    setCartLines((prev) =>
+      prev
+        .map((l) =>
+          l.cartKey === cartKey ? { ...l, quantity: l.quantity - 1 } : l
+        )
+        .filter((l) => l.quantity > 0)
+    );
+  };
+
+  const handleUpdateLineNote = (cartKey: string, note: string) => {
+    setCartLines((prev) =>
+      prev.map((l) => (l.cartKey === cartKey ? { ...l, note } : l))
+    );
+  };
+
+  const totalCount = cartLines.reduce((sum, l) => sum + l.quantity, 0);
+  const subtotal = cartLines.reduce(
+    (sum, l) =>
+      sum + computeItemUnitPrice(l.item, l.selectedOptions) * l.quantity,
+    0
   );
+
+  const selectedZone =
+    menu.delivery.zones.find((z) => z.id === customer.deliveryZoneId) ||
+    menu.delivery.zones[0];
+  const isFreeDelivery =
+    menu.delivery.freeDeliveryThreshold > 0 &&
+    subtotal >= menu.delivery.freeDeliveryThreshold;
+  const deliveryFee =
+    orderType === 'delivery'
+      ? isFreeDelivery
+        ? 0
+        : selectedZone?.fee || 0
+      : 0;
+  const grandTotal = subtotal + deliveryFee;
+
+  const menuUrl = `${getBaseUrl()}/m/${menu.slug}`;
 
   return (
     <div
       dir={dir}
-      className="min-h-screen flex flex-col justify-between pb-24"
-      style={{ backgroundColor: menu.colors.background || '#F9FAF8' }}
+      className="min-h-screen flex flex-col justify-between pb-24 lg:pb-8"
+      style={
+        {
+          backgroundColor: menu.colors.background || '#FAF8F5',
+          '--menu-primary': menu.colors.primary,
+          '--menu-accent': menu.colors.accent,
+        } as React.CSSProperties
+      }
     >
       <SeoHead pathname={`/m/${menu.slug}`} lang={menuLang} />
 
-      <div>
-        {/* Restaurant Header */}
-        <header className="bg-white border-b border-neutral-200/80 pt-5 pb-5">
-          <div className="max-w-3xl mx-auto px-4 space-y-4">
-            {/* Top Bar: Discreet Back Link + Language Switcher */}
-            <div className="flex items-center justify-between gap-2">
-              <Link
-                to="/"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900 transition-colors"
-              >
-                <span
-                  className="w-5 h-5 rounded-md inline-flex items-center justify-center text-white"
-                  style={{ backgroundColor: menu.colors.primary }}
-                >
-                  <QrCode className="w-3 h-3" />
-                </span>
-                <span>{t.backToHome}</span>
-              </Link>
-
-              <LanguageSwitcher
-                availableLanguages={menu.languages}
-                activeLanguage={menuLang}
-                onSelectLanguage={setMenuLang}
-                accentColor={menu.colors.primary}
-              />
-            </div>
-
-            {/* Restaurant Identity: Logo, H1 Name, City, Tagline */}
-            <div className="flex items-center gap-4 pt-1">
-              <img
-                src={menu.logo}
-                alt={menu.name}
-                referrerPolicy="no-referrer"
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-neutral-200 shadow-xs shrink-0 bg-neutral-100"
-              />
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-extrabold text-neutral-950 tracking-tight">
-                    {menu.name}
-                  </h1>
-                  <span className="text-xs font-bold text-neutral-500">
-                    · {menu.city}
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
-                  {getLocalized(menu.tagline, menuLang)}
-                </p>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative">
-              <Search
-                className={`w-4 h-4 text-neutral-400 absolute top-1/2 -translate-y-1/2 ${
-                  dir === 'rtl' ? 'right-3.5' : 'left-3.5'
-                }`}
-              />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                className={`w-full rounded-xl bg-neutral-100 border border-neutral-200/80 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white focus:border-neutral-400 transition-colors ${
-                  dir === 'rtl' ? 'pr-10 pl-9' : 'pl-10 pr-9'
-                }`}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  aria-label={t.clearSearch}
-                  className={`absolute top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer ${
-                    dir === 'rtl' ? 'left-3' : 'right-3'
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+      {/* Main 3-Column Desktop / 1-Column Mobile Layout */}
+      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* LEFT COLUMN (Desktop Sticky): Business Profile Card */}
+          <div className="lg:col-span-3 lg:sticky lg:top-6">
+            <BusinessProfileCard
+              menu={menu}
+              lang={menuLang}
+              onSelectLanguage={setMenuLang}
+              isOpen={isOpen}
+              todayKey={liveStatus.todayKey}
+              todayHours={liveStatus.todayHours}
+              simulateClosed={simulateClosed}
+              onToggleSimulateClosed={() => setSimulateClosed((prev) => !prev)}
+              onOpenQrModal={() => setQrModalOpen(true)}
+            />
           </div>
-        </header>
 
-        {/* Sticky Horizontal Category Tabs */}
-        <CategoryTabs
-          categories={menu.categories}
-          activeCategoryId={activeCategoryId}
-          onSelectCategory={handleSelectCategory}
-          lang={menuLang}
-          primaryColor={menu.colors.primary}
-        />
+          {/* CENTER COLUMN: Promo Banner, Sticky Category Tabs + Search, Popular & Categories */}
+          <main className="lg:col-span-5 space-y-6 min-w-0">
+            {/* Editable Promo Banner */}
+            {menu.promoBanner && menu.promoBanner.enabled && (
+              <div className="relative rounded-3xl overflow-hidden bg-neutral-900 text-white shadow-sm border border-neutral-200/60">
+                <img
+                  src={menu.promoBanner.image}
+                  alt={getLocalized(menu.promoBanner.title, menuLang)}
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover opacity-55"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/30" />
 
-        {/* Menu Categories & Items */}
-        <main className="max-w-3xl mx-auto px-4 py-6 space-y-8">
-          {filteredCategories.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-neutral-200 p-8 text-center space-y-3">
-              <p className="text-sm font-semibold text-neutral-600">{t.noResults}</p>
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white cursor-pointer"
-                style={{ backgroundColor: menu.colors.primary }}
-              >
-                {t.clearSearch}
-              </button>
-            </div>
-          ) : (
-            filteredCategories.map((category) => (
-              <section
-                key={category.id}
-                id={`cat-${category.id}`}
-                data-category-id={category.id}
-                className="scroll-mt-20 space-y-3.5"
-              >
-                <div className="flex items-center justify-between border-b border-neutral-200/80 pb-2">
-                  <h2 className="text-lg sm:text-xl font-extrabold text-neutral-950">
-                    {getLocalized(category.name, menuLang)}
-                  </h2>
-                  <span className="text-xs font-semibold text-neutral-400 tabular-nums">
-                    {category.items.length}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  {category.items.map((item) => (
-                    <MenuItemCard
-                      key={item.id}
-                      item={item}
-                      lang={menuLang}
-                      currency={menu.currency}
-                      primaryColor={menu.colors.primary}
-                      quantity={cart[item.id] || 0}
-                      onAdd={() => addItem(item.id)}
-                      onRemove={() => removeItem(item.id)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))
-          )}
-
-          {/* Restaurant Contact, Hours, Map & Social Info */}
-          <section className="bg-white rounded-3xl border border-neutral-200/90 p-5 sm:p-6 space-y-5 mt-10">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex items-start gap-3">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white"
-                  style={{ backgroundColor: menu.colors.primary }}
-                >
-                  <Clock className="w-4.5 h-4.5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-neutral-500">
-                    {t.hoursTitle}
-                  </h3>
-                  <p className="text-sm font-bold text-neutral-900 mt-0.5">
-                    {getLocalized(menu.hours, menuLang)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white"
-                  style={{ backgroundColor: menu.colors.primary }}
-                >
-                  <MapPin className="w-4.5 h-4.5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-neutral-500">
-                    {t.addressTitle}
-                  </h3>
-                  <p className="text-sm font-bold text-neutral-900 mt-0.5">
-                    {getLocalized(menu.contact.address, menuLang)}
-                  </p>
-                  {menu.contact.mapsLink && (
-                    <a
-                      href={menu.contact.mapsLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-bold mt-1 hover:underline"
-                      style={{ color: menu.colors.primary }}
+                <div className="relative p-5 sm:p-6 space-y-3">
+                  {menu.promoBanner.badge && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-white px-2.5 py-1 rounded-lg"
+                      style={{ backgroundColor: menu.colors.primary }}
                     >
-                      <span>{t.openInMaps}</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                      <Sparkles className="w-3 h-3" />
+                      <span>{getLocalized(menu.promoBanner.badge, menuLang)}</span>
+                    </span>
                   )}
+
+                  <h2 className="text-lg sm:text-xl font-extrabold text-white leading-snug">
+                    {getLocalized(menu.promoBanner.title, menuLang)}
+                  </h2>
+
+                  <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed">
+                    {getLocalized(menu.promoBanner.subtitle, menuLang)}
+                  </p>
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (menu.promoBanner?.targetCategoryId) {
+                          handleSelectCategory(menu.promoBanner.targetCategoryId);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold text-white shadow-xs hover:opacity-95 transition-opacity cursor-pointer"
+                      style={{ backgroundColor: menu.colors.primary }}
+                    >
+                      <span>
+                        {getLocalized(menu.promoBanner.buttonText, menuLang)}
+                      </span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* Sticky Category Tabs + Search Box */}
+            <div className="rounded-3xl bg-white border border-neutral-200/90 overflow-hidden shadow-2xs">
+              <CategoryTabs
+                categories={menu.categories}
+                hasPopularSection={popularItems.length > 0}
+                activeCategoryId={activeCategoryId}
+                onSelectCategory={handleSelectCategory}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                lang={menuLang}
+                primaryColor={menu.colors.primary}
+              />
+
+              <div className="p-4 space-y-8">
+                {/* "Most Popular" Section (shown when not filtering by search) */}
+                {popularItems.length > 0 && !searchQuery.trim() && (
+                  <section
+                    id="cat-popular"
+                    data-category-id="popular"
+                    className="scroll-mt-32 space-y-3.5"
+                  >
+                    <div className="flex items-center justify-between border-b border-neutral-200/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Flame
+                          className="w-5 h-5 shrink-0"
+                          style={{ color: menu.colors.primary }}
+                        />
+                        <h2 className="text-base sm:text-lg font-extrabold text-neutral-950">
+                          {t.mostPopularTitle}
+                        </h2>
+                      </div>
+                      <span className="text-xs font-bold text-neutral-500">
+                        {formatItemCountLabel(popularItems.length)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {popularItems.map((item) => (
+                        <MenuItemCard
+                          key={`pop-${item.id}`}
+                          item={item}
+                          lang={menuLang}
+                          primaryColor={menu.colors.primary}
+                          quantity={itemQuantityMap[item.id] || 0}
+                          onIncrement={() => handleCardIncrement(item)}
+                          onDecrement={() => handleCardDecrement(item)}
+                          onOpenDetail={() => setDetailItem(item)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Category Sections */}
+                {filteredCategories.length === 0 ? (
+                  <div className="py-10 text-center space-y-3">
+                    <p className="text-sm font-bold text-neutral-600">
+                      {t.noResults}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white cursor-pointer"
+                      style={{ backgroundColor: menu.colors.primary }}
+                    >
+                      {t.clearSearch}
+                    </button>
+                  </div>
+                ) : (
+                  filteredCategories.map((category) => (
+                    <section
+                      key={category.id}
+                      id={`cat-${category.id}`}
+                      data-category-id={category.id}
+                      className="scroll-mt-32 space-y-3.5"
+                    >
+                      <div className="flex items-center justify-between border-b border-neutral-200/80 pb-2">
+                        <h2 className="text-base sm:text-lg font-extrabold text-neutral-950">
+                          {getLocalized(category.name, menuLang)}
+                        </h2>
+                        <span className="text-xs font-bold text-neutral-500">
+                          {formatItemCountLabel(category.items.length)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+                        {category.items.map((item) => (
+                          <MenuItemCard
+                            key={item.id}
+                            item={item}
+                            lang={menuLang}
+                            primaryColor={menu.colors.primary}
+                            quantity={itemQuantityMap[item.id] || 0}
+                            onIncrement={() => handleCardIncrement(item)}
+                            onDecrement={() => handleCardDecrement(item)}
+                            onOpenDetail={() => setDetailItem(item)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))
+                )}
+              </div>
             </div>
+          </main>
 
-            {/* Action Buttons: Call, WhatsApp, Instagram */}
-            <div className="pt-3 border-t border-neutral-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <a
-                href={`tel:${menu.contact.phone.replace(/\s+/g, '')}`}
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs sm:text-sm font-bold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 transition-colors"
-              >
-                <Phone className="w-4 h-4 shrink-0" />
-                <span>{t.callNow}</span>
-              </a>
-
-              <a
-                href={directContactWhatsAppUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs sm:text-sm font-bold text-white transition-opacity hover:opacity-95"
-                style={{ backgroundColor: '#25D366' }}
-              >
-                <MessageCircle className="w-4 h-4 shrink-0" />
-                <span>{t.whatsappContact}</span>
-              </a>
-
-              {menu.contact.instagram && (
-                <a
-                  href={menu.contact.instagram}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs sm:text-sm font-bold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                >
-                  <Instagram className="w-4 h-4 shrink-0" />
-                  <span>{t.instagramFollow}</span>
-                </a>
-              )}
-            </div>
-          </section>
-        </main>
+          {/* RIGHT COLUMN (Desktop Sticky): Cart & Ordering Panel */}
+          <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-6">
+            <CartPanel
+              menu={menu}
+              lang={menuLang}
+              isOpen={isOpen}
+              cartItems={cartLines}
+              upsellItems={upsellItems}
+              orderType={orderType}
+              onOrderTypeChange={setOrderType}
+              customer={customer}
+              onCustomerChange={handleCustomerChange}
+              hasSavedDetails={hasSavedDetails}
+              onForgetDetails={handleForgetDetails}
+              onIncrementLine={handleIncrementLine}
+              onDecrementLine={handleDecrementLine}
+              onUpdateLineNote={handleUpdateLineNote}
+              onQuickAddUpsell={handleCardIncrement}
+              onClearCart={() => setCartLines([])}
+              onOpenWaiterModal={() => setWaiterModalOpen(true)}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Discreet Footer: "Menu by My Menu" */}
-      <footer className="py-6 text-center border-t border-neutral-200/70 bg-white/60">
+      {/* Discreet Footer Credit: "Menu by My Menu" */}
+      <footer className="mt-12 py-6 text-center border-t border-neutral-200/70 bg-white/60">
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-neutral-800 transition-colors"
         >
           <span
             className="w-4 h-4 rounded inline-flex items-center justify-center text-white"
@@ -430,145 +617,111 @@ export const MenuPage: React.FC = () => {
         </Link>
       </footer>
 
-      {/* Sticky Bottom Cart Bar when items are selected */}
+      {/* Mobile Sticky Bottom Cart Bar ("2 articles · 37 MAD · Commander") */}
       {totalCount > 0 && (
-        <div className="fixed bottom-4 inset-x-4 z-30 max-w-xl mx-auto">
-          <div
-            className="rounded-2xl p-3 sm:p-3.5 text-white shadow-xl flex items-center justify-between gap-3"
-            style={{ backgroundColor: menu.colors.accent || '#0F1410' }}
+        <div className="fixed bottom-0 inset-x-0 z-30 p-3 bg-gradient-to-t from-black/20 to-transparent lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileCartOpen(true)}
+            className="w-full max-w-lg mx-auto rounded-2xl px-4 py-3.5 text-white shadow-xl flex items-center justify-between gap-3 cursor-pointer active:scale-[0.99] transition-transform"
+            style={{ backgroundColor: menu.colors.accent || '#18181B' }}
           >
-            <button
-              type="button"
-              onClick={() => setCartOpen(true)}
-              className="flex items-center gap-3 text-start cursor-pointer"
-            >
+            <div className="flex items-center gap-2.5 text-xs sm:text-sm font-extrabold">
               <span
-                className="w-9 h-9 rounded-xl inline-flex items-center justify-center font-extrabold text-sm text-white tabular-nums shrink-0"
+                className="px-2.5 py-1 rounded-lg text-white font-extrabold tabular-nums"
                 style={{ backgroundColor: menu.colors.primary }}
               >
-                {totalCount}
+                {formatItemCountLabel(totalCount)}
               </span>
-              <div>
-                <p className="text-xs font-bold text-white/80">{t.cartTitle}</p>
-                <p className="text-sm font-extrabold tabular-nums">
-                  {totalPrice} {menu.currency}
-                </p>
-              </div>
-            </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCartOpen(true)}
-                className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white shadow-xs cursor-pointer whitespace-nowrap inline-flex items-center gap-1.5"
-                style={{ backgroundColor: menu.colors.primary }}
-              >
-                <ShoppingBag className="w-4 h-4" />
-                <span>{t.cartButton}</span>
-              </button>
+              <span aria-hidden="true">·</span>
+              <PriceDisplay
+                amount={grandTotal}
+                lang={menuLang}
+                className="text-sm sm:text-base font-extrabold text-white"
+              />
             </div>
+
+            <span
+              className="px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold text-white shadow-2xs whitespace-nowrap"
+              style={{ backgroundColor: menu.colors.primary }}
+            >
+              {t.mobileBarOrderCta}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Mobile Bottom Sheet Cart Drawer */}
+      {mobileCartOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs flex items-end justify-center lg:hidden"
+          onClick={() => setMobileCartOpen(false)}
+        >
+          <div
+            className="bg-white w-full max-w-lg rounded-t-3xl max-h-[88vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drag Handle Affordance */}
+            <div className="w-10 h-1.5 bg-neutral-300 rounded-full mx-auto mt-3 mb-1" />
+            <CartPanel
+              menu={menu}
+              lang={menuLang}
+              isOpen={isOpen}
+              cartItems={cartLines}
+              upsellItems={upsellItems}
+              orderType={orderType}
+              onOrderTypeChange={setOrderType}
+              customer={customer}
+              onCustomerChange={handleCustomerChange}
+              hasSavedDetails={hasSavedDetails}
+              onForgetDetails={handleForgetDetails}
+              onIncrementLine={handleIncrementLine}
+              onDecrementLine={handleDecrementLine}
+              onUpdateLineNote={handleUpdateLineNote}
+              onQuickAddUpsell={handleCardIncrement}
+              onClearCart={() => {
+                setCartLines([]);
+                setMobileCartOpen(false);
+              }}
+              onOpenWaiterModal={() => {
+                setMobileCartOpen(false);
+                setWaiterModalOpen(true);
+              }}
+              onCloseMobileDrawer={() => setMobileCartOpen(false)}
+            />
           </div>
         </div>
       )}
 
-      {/* In-Memory Cart Drawer / Modal for WhatsApp Order */}
-      {cartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 space-y-4 max-h-[85vh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-neutral-950">
-                  {t.cartTitle}
-                </h2>
-                <p className="text-xs text-neutral-500">{t.cartSubtitle}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCartOpen(false)}
-                className="p-2 rounded-xl bg-neutral-100 text-neutral-600 hover:text-neutral-950 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* Item Detail & Options Modal */}
+      <ItemDetailModal
+        item={detailItem}
+        lang={menuLang}
+        primaryColor={menu.colors.primary}
+        onClose={() => setDetailItem(null)}
+        onConfirmAdd={handleAddWithOptions}
+      />
 
-            <div className="flex-1 overflow-y-auto space-y-2.5 py-1">
-              {cartEntries.map(({ item, qty }) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-neutral-50 border border-neutral-200/70"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-neutral-950 truncate">
-                      {getLocalized(item.name, menuLang)}
-                    </p>
-                    <p className="text-xs text-neutral-500 tabular-nums">
-                      {item.price} {menu.currency} × {qty} ={' '}
-                      <strong className="text-neutral-900">
-                        {item.price * qty} {menu.currency}
-                      </strong>
-                    </p>
-                  </div>
+      {/* Full-Screen "Show to Waiter" Modal */}
+      <ShowToWaiterModal
+        open={waiterModalOpen}
+        onClose={() => setWaiterModalOpen(false)}
+        cartItems={cartLines}
+        tableNumber={customer.tableNumber}
+        onTableNumberChange={(val) => handleCustomerChange({ tableNumber: val })}
+        totalAmount={grandTotal}
+        lang={menuLang}
+        menu={menu}
+      />
 
-                  <div className="inline-flex items-center gap-2 bg-white rounded-xl p-1 border border-neutral-200">
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="w-6 h-6 rounded-lg bg-neutral-100 text-neutral-800 flex items-center justify-center font-bold cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <span className="text-xs font-extrabold tabular-nums px-1">
-                      {qty}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => addItem(item.id)}
-                      className="w-6 h-6 rounded-lg text-white flex items-center justify-center font-bold cursor-pointer"
-                      style={{ backgroundColor: menu.colors.primary }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-neutral-200 pt-4 space-y-3">
-              <div className="flex items-center justify-between text-base font-extrabold text-neutral-950">
-                <span>{t.totalLabel}</span>
-                <span className="tabular-nums">
-                  {totalPrice} {menu.currency}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCart({});
-                    setCartOpen(false);
-                  }}
-                  className="px-3.5 py-3 rounded-xl border border-neutral-200 text-neutral-600 hover:text-rose-600 hover:border-rose-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>{t.clearCart}</span>
-                </button>
-
-                <a
-                  href={buildOrderWhatsAppUrl()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-bold text-white shadow-md hover:opacity-95 transition-opacity"
-                  style={{ backgroundColor: '#25D366' }}
-                >
-                  <MessageCircle className="w-4.5 h-4.5 shrink-0" />
-                  <span>{t.sendOrderWhatsapp}</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Client Menu QR Code & Copy Link Popup */}
+      <MenuQrModal
+        open={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        menu={menu}
+        menuUrl={menuUrl}
+        lang={menuLang}
+      />
     </div>
   );
 };
