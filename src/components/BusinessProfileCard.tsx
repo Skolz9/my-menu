@@ -41,6 +41,7 @@ export const BusinessProfileCard: React.FC<{
   simulateClosed: boolean;
   onToggleSimulateClosed: () => void;
   onOpenQrModal: () => void;
+  lockedTableLabel?: string | null;
 }> = ({
   menu,
   lang,
@@ -51,6 +52,7 @@ export const BusinessProfileCard: React.FC<{
   simulateClosed,
   onToggleSimulateClosed,
   onOpenQrModal,
+  lockedTableLabel,
 }) => {
   const [showWeekly, setShowWeekly] = useState(false);
   const t = translations[lang].menuPage;
@@ -59,6 +61,8 @@ export const BusinessProfileCard: React.FC<{
     `Salam ${menu.name}`,
     menu.contact.whatsapp
   );
+
+  const tableWord = lang === 'ar' ? 'طاولة' : 'Table';
 
   return (
     <aside className="bg-white rounded-3xl border border-neutral-200/90 p-5 shadow-2xs space-y-4">
@@ -71,14 +75,27 @@ export const BusinessProfileCard: React.FC<{
           accentColor={menu.colors.primary}
         />
 
-        <button
-          type="button"
-          onClick={onOpenQrModal}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors cursor-pointer shrink-0"
-        >
-          <QrCode className="w-3.5 h-3.5" style={{ color: menu.colors.primary }} />
-          <span>{t.qrCodeBtn}</span>
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {lockedTableLabel && (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-white text-xs font-extrabold shadow-2xs"
+              style={{ backgroundColor: menu.colors.primary }}
+            >
+              <span>
+                {tableWord} {lockedTableLabel}
+              </span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={onOpenQrModal}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold transition-colors cursor-pointer shrink-0"
+          >
+            <QrCode className="w-3.5 h-3.5" style={{ color: menu.colors.primary }} />
+            <span>{t.qrCodeBtn}</span>
+          </button>
+        </div>
       </div>
 
       {/* Business Logo, H1 Name, Tagline */}

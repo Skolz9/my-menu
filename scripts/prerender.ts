@@ -28,7 +28,7 @@ async function runPrerender() {
 
   const baseUrl = String(config.baseUrl).replace(/\/+$/, '');
   const menuRoutes: string[] = allMenus.map((m: { slug: string }) => `/m/${m.slug}`);
-  const routesToPrerender = ['/', ...menuRoutes, '/admin/qr', '/404'];
+  const routesToPrerender = ['/', ...menuRoutes, '/login', '/dashboard', '/admin', '/admin/qr', '/404'];
 
   console.log(`[prerender] Prerendering ${routesToPrerender.length} routes to static HTML...`);
 

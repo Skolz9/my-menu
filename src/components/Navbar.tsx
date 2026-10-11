@@ -51,9 +51,15 @@ export const Navbar: React.FC = () => {
           )}
         </nav>
 
-        {/* Zone 3: Language Switcher + WhatsApp CTA */}
-        <div className="hidden md:flex items-center gap-3 shrink-0">
+        {/* Zone 3: Language Switcher + Client Login + WhatsApp CTA */}
+        <div className="hidden md:flex items-center gap-2.5 shrink-0">
           <LanguageSwitcher />
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-neutral-800 bg-neutral-100 hover:bg-neutral-200 transition-colors whitespace-nowrap"
+          >
+            <span>Espace Client</span>
+          </Link>
           <a
             href={whatsappHref}
             target="_blank"

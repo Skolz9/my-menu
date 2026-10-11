@@ -171,11 +171,16 @@ export function getRouteSeoData(pathname: string, lang: Language = 'ar'): RouteS
     }
   }
 
-  if (normalizedPath === '/admin/qr') {
+  if (
+    normalizedPath === '/admin/qr' ||
+    normalizedPath === '/admin' ||
+    normalizedPath === '/dashboard' ||
+    normalizedPath === '/login'
+  ) {
     return {
-      title: `QR Code Studio — ${config.brandName} Admin`,
-      description: `Outil privé de génération de QR codes et chevalets A5 pour ${config.brandName}.`,
-      canonicalUrl: `${baseUrl}/admin/qr`,
+      title: `${config.brandName} — Espace Restaurant & Administration`,
+      description: `Espace privé de gestion des menus QR, commandes en direct et tables pour ${config.brandName}.`,
+      canonicalUrl: `${baseUrl}${normalizedPath}`,
       ogImage: config.images.ogBanner,
       ogType: 'website',
       robots: 'noindex, nofollow',

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ShoppingBag,
   Plus,
@@ -13,6 +14,8 @@ import {
   AlertCircle,
   Check,
   X,
+  Lock,
+  ExternalLink,
 } from 'lucide-react';
 import {
   getLocalized,
@@ -30,6 +33,7 @@ import {
   formatSelectedOptionsList,
   type CartLineItem,
 } from './MenuModals';
+import { placePublicOrder } from '../lib/store';
 
 export interface CustomerDetails {
   name: string;
@@ -38,7 +42,61 @@ export interface CustomerDetails {
   locationLink: string;
   deliveryZoneId: string;
   tableNumber: string;
+  marketingConsent?: boolean;
 }
+
+const EXTRA_CART_LABELS: Record<
+  Language,
+  {
+    tableBadgePrefix: string;
+    tableLockedHint: string;
+    marketingConsentLabel: string;
+    optionalForDineIn: string;
+    submittingOrder: string;
+    orderConfirmedTitle: string;
+    orderConfirmedCode: string;
+    openWhatsappAgain: string;
+    viewInDashboard: string;
+    notAcceptingOrders: string;
+  }
+> = {
+  ar: {
+    tableBadgePrefix: 'طاولة',
+    tableLockedHint: 'تم تحديد رقم الطاولة تلقائياً عبر رمز QR الخاص بالطاولة',
+    marketingConsentLabel: 'أوافق على تلقي عروض وخصومات المقهى عبر واتساب',
+    optionalForDineIn: 'الاسم ورقم الهاتف (اختياري لحفظ طلبك)',
+    submittingOrder: 'جاري تسجيل الطلب...',
+    orderConfirmedTitle: 'تم تسجيل طلبك بنجاح!',
+    orderConfirmedCode: 'رمز الطلب',
+    openWhatsappAgain: 'فتح واتساب لإرسال الطلب',
+    viewInDashboard: 'عرض في لوحة التحكم (/dashboard)',
+    notAcceptingOrders: 'المقهى لا يستقبل طلبات جديدة مؤقتاً',
+  },
+  fr: {
+    tableBadgePrefix: 'Table',
+    tableLockedHint: 'Table détectée et verrouillée automatiquement via le QR code',
+    marketingConsentLabel: 'J’accepte de recevoir les offres spéciales par WhatsApp',
+    optionalForDineIn: 'Nom & téléphone (optionnel sur place)',
+    submittingOrder: 'Enregistrement de la commande...',
+    orderConfirmedTitle: 'Commande enregistrée !',
+    orderConfirmedCode: 'Code commande',
+    openWhatsappAgain: 'Ouvrir WhatsApp avec la commande',
+    viewInDashboard: 'Voir dans le Dashboard (/dashboard)',
+    notAcceptingOrders: 'Le restaurant ne prend pas de commandes pour le moment',
+  },
+  en: {
+    tableBadgePrefix: 'Table',
+    tableLockedHint: 'Table automatically detected and locked via table QR code',
+    marketingConsentLabel: 'I agree to receive special offers via WhatsApp',
+    optionalForDineIn: 'Name & phone (optional for dine-in)',
+    submittingOrder: 'Saving order...',
+    orderConfirmedTitle: 'Order saved!',
+    orderConfirmedCode: 'Order code',
+    openWhatsappAgain: 'Open WhatsApp with order',
+    viewInDashboard: 'View in Dashboard (/dashboard)',
+    notAcceptingOrders: 'This business is temporarily not accepting orders',
+  },
+};
 
 export const CartPanel: React.FC<{
   menu: ClientMenu;
@@ -59,6 +117,7 @@ export const CartPanel: React.FC<{
   onClearCart: () => void;
   onOpenWaiterModal: () => void;
   onCloseMobileDrawer?: () => void;
+  lockedTableLabel?: string | null;
 }> = ({
   menu,
   lang,
@@ -78,8 +137,10 @@ export const CartPanel: React.FC<{
   onClearCart,
   onOpenWaiterModal,
   onCloseMobileDrawer,
+  lockedTableLabel,
 }) => {
   const t = translations[lang].menuPage;
+  const extraT = EXTRA_CART_LABELS[lang];
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
 
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
@@ -88,6 +149,15 @@ export const CartPanel: React.FC<{
   const [locating, setLocating] = useState<boolean>(false);
   const [locationError, setLocationError] = useState<boolean>(false);
   const [showValidationWarning, setShowValidationWarning] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [lastPlacedOrder, setLastPlacedOrder] = useState<{
+    code: string;
+    waUrl: string;
+    tableLabel: string | null;
+  } | null>(null);
+
+  const effectiveOrderType: OrderType = lockedTableLabel ? 'dineIn' : orderType;
+  const effectiveTableNumber = lockedTableLabel || customer.tableNumber;
 
   const enabledOrderTypes = (['dineIn', 'takeaway', 'delivery'] as OrderType[]).filter(
     (type) => menu.orderTypes[type]
@@ -108,7 +178,7 @@ export const CartPanel: React.FC<{
     subtotal >= menu.delivery.freeDeliveryThreshold;
 
   const deliveryFee =
-    orderType === 'delivery'
+    effectiveOrderType === 'delivery'
       ? isFreeDelivery
         ? 0
         : selectedZone?.fee || 0
@@ -117,18 +187,23 @@ export const CartPanel: React.FC<{
   const grandTotal = subtotal + deliveryFee;
 
   const isBelowMinDeliveryOrder =
-    orderType === 'delivery' && subtotal < menu.delivery.minimumOrder;
+    effectiveOrderType === 'delivery' && subtotal < menu.delivery.minimumOrder;
 
   const isMissingRequiredFields =
-    (orderType === 'takeaway' && !customer.name.trim()) ||
-    (orderType === 'delivery' &&
+    (effectiveOrderType === 'takeaway' && !customer.name.trim()) ||
+    (effectiveOrderType === 'delivery' &&
       (!customer.name.trim() ||
         !customer.phone.trim() ||
         !customer.address.trim() ||
         !selectedZone));
 
+  const acceptingOrders = menu.acceptingOrders !== false;
+
   const canSubmitOrder =
-    cartItems.length > 0 && !isBelowMinDeliveryOrder && !isMissingRequiredFields;
+    acceptingOrders &&
+    cartItems.length > 0 &&
+    !isBelowMinDeliveryOrder &&
+    !isMissingRequiredFields;
 
   const handleUseMyLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -152,19 +227,11 @@ export const CartPanel: React.FC<{
     );
   };
 
-  const buildWhatsAppOrderUrl = () => {
-    const now = new Date();
-    const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
-      2,
-      '0'
-    )}${String(now.getDate()).padStart(2, '0')}`;
-    const shortCode = String((now.getMinutes() * 60 + now.getSeconds()) % 900 + 100);
-    const orderRef = `MM-${datePart}-${shortCode}`;
-
+  const buildWhatsAppOrderUrl = (orderCode: string) => {
     const lines: string[] = [
       `*${t.waNewOrder} — ${menu.name}*`,
-      `${t.waRef}: ${orderRef}`,
-      `${t.waType}: ${t.orderTypes[orderType]}`,
+      `${t.waRef}: ${orderCode}`,
+      `${t.waType}: ${t.orderTypes[effectiveOrderType]}`,
     ];
 
     if (!isOpen) {
@@ -175,8 +242,8 @@ export const CartPanel: React.FC<{
       lines.push(`${t.waTiming}: ${timingText}`);
     }
 
-    if (orderType === 'dineIn' && customer.tableNumber.trim()) {
-      lines.push(`${t.waTable}: ${customer.tableNumber.trim()}`);
+    if (effectiveOrderType === 'dineIn' && effectiveTableNumber.trim()) {
+      lines.push(`${t.waTable}: ${effectiveTableNumber.trim()}`);
     }
 
     lines.push('', `*${t.waItems}:*`);
@@ -201,7 +268,7 @@ export const CartPanel: React.FC<{
     lines.push('');
     lines.push(`${t.subtotalLabel}: ${formatPriceText(subtotal, lang)}`);
 
-    if (orderType === 'delivery' && selectedZone) {
+    if (effectiveOrderType === 'delivery' && selectedZone) {
       const feeStr = isFreeDelivery
         ? t.freeDeliveryBadge
         : formatPriceText(deliveryFee, lang);
@@ -212,15 +279,15 @@ export const CartPanel: React.FC<{
 
     lines.push(`*${t.totalLabel}: ${formatPriceText(grandTotal, lang)}*`);
 
-    if (orderType === 'takeaway' || orderType === 'delivery') {
+    if (customer.name.trim() || customer.phone.trim() || effectiveOrderType === 'delivery') {
       lines.push('', `*${t.waCustomerInfo}:*`);
       if (customer.name.trim()) {
         lines.push(`${t.waName}: ${customer.name.trim()}`);
       }
-      if (orderType === 'delivery') {
-        if (customer.phone.trim()) {
-          lines.push(`${t.waPhone}: ${customer.phone.trim()}`);
-        }
+      if (customer.phone.trim()) {
+        lines.push(`${t.waPhone}: ${customer.phone.trim()}`);
+      }
+      if (effectiveOrderType === 'delivery') {
         if (selectedZone) {
           lines.push(
             `${t.waZone}: ${getLocalized(selectedZone.name, lang)} (${getLocalized(
@@ -241,13 +308,71 @@ export const CartPanel: React.FC<{
     return getWhatsAppUrl(lines.join('\n'), menu.contact.whatsapp);
   };
 
-  const handleOrderClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+  // On Send: call place_order RPC, then open wa.me/{business whatsapp} with the order code.
+  // If place_order fails, still open WhatsApp so the sale is never lost.
+  const handleSendOrder = async () => {
     if (!canSubmitOrder) {
-      e.preventDefault();
       setShowValidationWarning(true);
       return;
     }
     setShowValidationWarning(false);
+    setSubmitting(true);
+
+    let orderCode = `MM-${Math.floor(1000 + Math.random() * 9000)}`;
+    try {
+      const result = await placePublicOrder(menu.slug, {
+        type: effectiveOrderType,
+        table_label:
+          effectiveOrderType === 'dineIn'
+            ? effectiveTableNumber.trim() || null
+            : null,
+        customer_name: customer.name.trim(),
+        phone: customer.phone.trim(),
+        address: customer.address.trim(),
+        delivery_zone_id: selectedZone?.id,
+        location_url: customer.locationLink,
+        marketing_consent: Boolean(customer.marketingConsent),
+        items: cartItems.map((line) => ({
+          item_id: line.item.id,
+          quantity: line.quantity,
+          selected_options: line.selectedOptions,
+          option_labels: formatSelectedOptionsList(
+            line.item,
+            line.selectedOptions,
+            lang
+          ),
+          note: line.note,
+        })),
+      });
+      if (result.code) {
+        orderCode = result.code;
+      }
+    } catch {
+      // Fallback order code already generated so the WhatsApp sale is never lost
+    } finally {
+      setSubmitting(false);
+    }
+
+    const waUrl = buildWhatsAppOrderUrl(orderCode);
+    setLastPlacedOrder({
+      code: orderCode,
+      waUrl,
+      tableLabel:
+        effectiveOrderType === 'dineIn'
+          ? effectiveTableNumber.trim() || null
+          : null,
+    });
+
+    // Navigate or trigger WhatsApp link safely
+    if (typeof window !== 'undefined') {
+      const a = document.createElement('a');
+      a.href = waUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   };
 
   return (
@@ -255,25 +380,39 @@ export const CartPanel: React.FC<{
       dir={dir}
       className="bg-white rounded-3xl border border-neutral-200/90 shadow-xs flex flex-col overflow-hidden"
     >
-      {/* Cart Header */}
+      {/* Cart Header with Table {label} badge when present */}
       <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <span
             className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0"
             style={{ backgroundColor: menu.colors.primary }}
           >
             <ShoppingBag className="w-4 h-4" />
           </span>
-          <h2 className="text-base sm:text-lg font-extrabold text-neutral-950">
+          <h2 className="text-base sm:text-lg font-extrabold text-neutral-950 truncate">
             {t.cartTitle}
           </h2>
+          {lockedTableLabel && (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold text-white shrink-0 shadow-2xs"
+              style={{ backgroundColor: menu.colors.primary }}
+            >
+              <Lock className="w-3 h-3" />
+              <span>
+                {extraT.tableBadgePrefix} {lockedTableLabel}
+              </span>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
           {cartItems.length > 0 && (
             <button
               type="button"
-              onClick={onClearCart}
+              onClick={() => {
+                onClearCart();
+                setLastPlacedOrder(null);
+              }}
               aria-label={t.clearCart}
               className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
               title={t.clearCart}
@@ -293,6 +432,58 @@ export const CartPanel: React.FC<{
           )}
         </div>
       </div>
+
+      {/* Order Confirmation Banner when an order was just placed */}
+      {lastPlacedOrder && (
+        <div className="mx-4 mt-4 rounded-2xl bg-emerald-950 text-white p-4 space-y-2.5 border border-emerald-700">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-300">
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>{extraT.orderConfirmedTitle}</span>
+            </span>
+            <span
+              dir="ltr"
+              className="px-2.5 py-0.5 rounded-lg bg-white text-neutral-950 text-xs font-extrabold"
+            >
+              {lastPlacedOrder.code}
+            </span>
+          </div>
+
+          {lastPlacedOrder.tableLabel && (
+            <p className="text-xs text-emerald-200 font-bold">
+              {extraT.tableBadgePrefix} {lastPlacedOrder.tableLabel}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <a
+              href={lastPlacedOrder.waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#25D366] text-white text-xs font-extrabold"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>{extraT.openWhatsappAgain}</span>
+            </a>
+
+            <Link
+              to={`/dashboard?business=${menu.slug}&tab=orders`}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold"
+            >
+              <span>{extraT.viewInDashboard}</span>
+              <ExternalLink className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Not Accepting Orders Banner */}
+      {!acceptingOrders && (
+        <div className="mx-4 mt-4 rounded-2xl bg-rose-950 text-white p-3.5 flex items-center gap-2.5 text-xs font-extrabold">
+          <AlertCircle className="w-4 h-4 text-rose-300 shrink-0" />
+          <span>{extraT.notAcceptingOrders}</span>
+        </div>
+      )}
 
       {/* High-Contrast Closed Business Notice & Time Slot Scheduler */}
       {!isOpen && (
@@ -326,7 +517,9 @@ export const CartPanel: React.FC<{
                     : 'border-white/40'
                 }`}
               >
-                {closedOrderMode === 'whenOpens' && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                {closedOrderMode === 'whenOpens' && (
+                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                )}
               </span>
               <span>{t.whenItOpensOption}</span>
             </button>
@@ -347,7 +540,9 @@ export const CartPanel: React.FC<{
                     : 'border-white/40'
                 }`}
               >
-                {closedOrderMode === 'slot' && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                {closedOrderMode === 'slot' && (
+                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                )}
               </span>
               <span>{t.scheduleSlotOption}</span>
             </button>
@@ -375,7 +570,7 @@ export const CartPanel: React.FC<{
         </div>
       )}
 
-      {/* Order Type Segmented Control */}
+      {/* Order Type Segmented Control (Locked to Dine-in when ?t={label} is active) */}
       {enabledOrderTypes.length > 0 && (
         <div className="px-4 pt-4">
           <p className="text-xs font-extrabold text-neutral-700 mb-2">
@@ -383,23 +578,29 @@ export const CartPanel: React.FC<{
           </p>
           <div className="grid grid-cols-3 gap-1.5 p-1 bg-neutral-100 rounded-2xl border border-neutral-200/80">
             {enabledOrderTypes.map((type) => {
-              const active = orderType === type;
+              const active = effectiveOrderType === type;
+              const disabledByTableQr = Boolean(lockedTableLabel) && type !== 'dineIn';
               return (
                 <button
                   key={type}
                   type="button"
+                  disabled={disabledByTableQr}
                   onClick={() => {
+                    if (disabledByTableQr) return;
                     onOrderTypeChange(type);
                     setShowValidationWarning(false);
                   }}
-                  className={`py-2 px-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                  className={`py-2 px-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
                     active
-                      ? 'text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-neutral-950'
+                      ? 'text-white shadow-xs cursor-pointer'
+                      : disabledByTableQr
+                      ? 'text-neutral-300 cursor-not-allowed'
+                      : 'text-neutral-600 hover:text-neutral-950 cursor-pointer'
                   }`}
                   style={active ? { backgroundColor: menu.colors.primary } : undefined}
                 >
-                  {t.orderTypes[type]}
+                  {active && lockedTableLabel && <Lock className="w-3 h-3" />}
+                  <span>{t.orderTypes[type]}</span>
                 </button>
               );
             })}
@@ -587,27 +788,71 @@ export const CartPanel: React.FC<{
 
           {/* Order Type Specific Customer Inputs */}
           <div className="space-y-3 pt-2 border-t border-neutral-200/80">
-            {orderType === 'dineIn' && (
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-neutral-700">
-                  {t.tableNumberLabel}
-                </label>
-                <input
-                  type="text"
-                  value={customer.tableNumber}
-                  onChange={(e) =>
-                    onCustomerChange({ tableNumber: e.target.value })
-                  }
-                  placeholder={t.tableNumberPlaceholder}
-                  style={
-                    { '--tw-ring-color': menu.colors.primary } as React.CSSProperties
-                  }
-                  className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3.5 py-2 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white focus:ring-2"
-                />
+            {effectiveOrderType === 'dineIn' && (
+              <div className="space-y-2.5">
+                <div className="space-y-1">
+                  <label className="flex items-center justify-between text-xs font-bold text-neutral-700">
+                    <span>{t.tableNumberLabel}</span>
+                    {lockedTableLabel && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] font-extrabold"
+                        style={{ color: menu.colors.primary }}
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>
+                          {extraT.tableBadgePrefix} {lockedTableLabel}
+                        </span>
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    value={effectiveTableNumber}
+                    readOnly={Boolean(lockedTableLabel)}
+                    onChange={(e) => {
+                      if (lockedTableLabel) return;
+                      onCustomerChange({ tableNumber: e.target.value });
+                    }}
+                    placeholder={t.tableNumberPlaceholder}
+                    style={
+                      { '--tw-ring-color': menu.colors.primary } as React.CSSProperties
+                    }
+                    className={`w-full rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold focus:outline-none ${
+                      lockedTableLabel
+                        ? 'bg-neutral-100 border-neutral-300 text-neutral-900 cursor-not-allowed'
+                        : 'bg-neutral-50 border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus:bg-white focus:ring-2'
+                    }`}
+                  />
+                  {lockedTableLabel && (
+                    <p className="text-[11px] text-neutral-500">
+                      {extraT.tableLockedHint}
+                    </p>
+                  )}
+                </div>
+
+                {/* Optional customer name & phone on dine-in so customer appears in CRM with their name */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={customer.name}
+                    onChange={(e) => onCustomerChange({ name: e.target.value })}
+                    placeholder={t.customerNamePlaceholder}
+                    className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white"
+                  />
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={customer.phone}
+                    onChange={(e) => onCustomerChange({ phone: e.target.value })}
+                    placeholder={t.customerPhonePlaceholder}
+                    className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white"
+                  />
+                </div>
               </div>
             )}
 
-            {(orderType === 'takeaway' || orderType === 'delivery') && (
+            {(effectiveOrderType === 'takeaway' ||
+              effectiveOrderType === 'delivery') && (
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-neutral-700">
@@ -625,29 +870,25 @@ export const CartPanel: React.FC<{
                   />
                 </div>
 
-                {orderType === 'delivery' && (
-                  <>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-neutral-700">
-                        {t.customerPhoneLabel}
-                      </label>
-                      <input
-                        type="tel"
-                        dir="ltr"
-                        value={customer.phone}
-                        onChange={(e) =>
-                          onCustomerChange({ phone: e.target.value })
-                        }
-                        placeholder={t.customerPhonePlaceholder}
-                        style={
-                          {
-                            '--tw-ring-color': menu.colors.primary,
-                          } as React.CSSProperties
-                        }
-                        className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3.5 py-2 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white focus:ring-2"
-                      />
-                    </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-neutral-700">
+                    {t.customerPhoneLabel}
+                  </label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={customer.phone}
+                    onChange={(e) => onCustomerChange({ phone: e.target.value })}
+                    placeholder={t.customerPhonePlaceholder}
+                    style={
+                      { '--tw-ring-color': menu.colors.primary } as React.CSSProperties
+                    }
+                    className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3.5 py-2 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:bg-white focus:ring-2"
+                  />
+                </div>
 
+                {effectiveOrderType === 'delivery' && (
+                  <>
                     {/* Delivery Zone Selector */}
                     <div className="space-y-1">
                       <label className="block text-xs font-bold text-neutral-700">
@@ -735,7 +976,10 @@ export const CartPanel: React.FC<{
                 )}
 
                 {/* Forget My Details Link */}
-                {(hasSavedDetails || customer.name || customer.phone || customer.address) && (
+                {(hasSavedDetails ||
+                  customer.name ||
+                  customer.phone ||
+                  customer.address) && (
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <span className="text-[11px] text-neutral-400">
                       {t.detailsSavedHint}
@@ -751,6 +995,21 @@ export const CartPanel: React.FC<{
                 )}
               </div>
             )}
+
+            {/* Marketing Consent Checkbox */}
+            <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={Boolean(customer.marketingConsent)}
+                onChange={(e) =>
+                  onCustomerChange({ marketingConsent: e.target.checked })
+                }
+                className="mt-0.5 rounded border-neutral-300 text-[#6BBF3A] focus:ring-[#6BBF3A]"
+              />
+              <span className="text-[11px] font-medium text-neutral-600 leading-snug">
+                {extraT.marketingConsentLabel}
+              </span>
+            </label>
           </div>
 
           {/* Totals & Delivery Rules Summary */}
@@ -764,7 +1023,7 @@ export const CartPanel: React.FC<{
               />
             </div>
 
-            {orderType === 'delivery' && (
+            {effectiveOrderType === 'delivery' && (
               <>
                 <div className="flex items-center justify-between text-xs sm:text-sm text-neutral-600">
                   <span>{t.deliveryFeeLabel}</span>
@@ -839,31 +1098,34 @@ export const CartPanel: React.FC<{
               </div>
             )}
 
-          {/* Primary Actions: Order on WhatsApp + Show to Waiter */}
+          {/* Primary Actions: Order on WhatsApp (calls place_order) + Show to Waiter */}
           <div className="space-y-2 pt-1">
-            <a
-              href={canSubmitOrder ? buildWhatsAppOrderUrl() : '#'}
-              target={canSubmitOrder ? '_blank' : undefined}
-              rel={canSubmitOrder ? 'noopener noreferrer' : undefined}
-              onClick={handleOrderClick}
-              aria-disabled={!canSubmitOrder}
+            <button
+              type="button"
+              onClick={handleSendOrder}
+              disabled={!canSubmitOrder || submitting}
               className={`w-full py-3.5 px-5 rounded-2xl text-sm font-extrabold text-white flex items-center justify-center gap-2 shadow-md transition-opacity ${
-                canSubmitOrder
+                canSubmitOrder && !submitting
                   ? 'hover:opacity-95 cursor-pointer'
                   : 'opacity-50 cursor-not-allowed'
               }`}
               style={{ backgroundColor: menu.colors.primary }}
             >
               <MessageCircle className="w-4.5 h-4.5 shrink-0" />
-              <span>{t.sendOrderWhatsapp}</span>
-            </a>
+              <span>
+                {submitting ? extraT.submittingOrder : t.sendOrderWhatsapp}
+              </span>
+            </button>
 
             <button
               type="button"
               onClick={onOpenWaiterModal}
               className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-extrabold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
-              <UserCheck className="w-4 h-4 shrink-0" style={{ color: menu.colors.primary }} />
+              <UserCheck
+                className="w-4 h-4 shrink-0"
+                style={{ color: menu.colors.primary }}
+              />
               <span>{t.showToWaiterBtn}</span>
             </button>
           </div>

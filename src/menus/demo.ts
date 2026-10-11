@@ -2,9 +2,13 @@ import { config } from '../config';
 import type { ClientMenu } from './types';
 
 export const demoMenu: ClientMenu = {
+  id: '00000000-0000-4000-8000-000000000001',
+  ownerId: 'owner-demo-uid',
+  ownerEmail: 'owner@mymenu.ma',
   slug: 'demo',
   name: 'Marina Sol Café',
   logo: config.images.demoMenu.logo,
+  cover: config.images.demoMenu.cover,
   tagline: {
     ar: 'قهوة مختصة، فطور بلدي مغربي وإطلالة على مارينا أكادير',
     fr: 'Café de spécialité, petit-déjeuner beldi & vue sur la Marina d’Agadir',
@@ -14,10 +18,14 @@ export const demoMenu: ClientMenu = {
   languages: ['ar', 'fr', 'en'],
   defaultLanguage: 'ar',
   colors: {
-    primary: '#C25E28',
+    primary: '#6BBF3A',
     accent: '#18181B',
     background: '#FAF8F5',
   },
+  tableCount: 12,
+  extraTables: ['Terrasse 1', 'VIP'],
+  isActive: true,
+  acceptingOrders: true,
   currency: 'MAD',
   contact: {
     whatsapp: config.whatsappNumber,

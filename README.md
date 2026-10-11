@@ -1,131 +1,65 @@
-# My Menu — Plateforme Menu QR Digital & Commande WhatsApp au Maroc (by WebAtlass)
+# My Menu — Plateforme SaaS Menu QR, Commandes WhatsApp & Dashboard (by WebAtlass)
 
-Site vitrine marketing + plateforme complète de menus QR & commande sur WhatsApp pour cafés et restaurants au Maroc (**My Menu** par **WebAtlass**).
+Plateforme complète de menus QR digitaux, commandes WhatsApp et gestion multi-restaurants pour cafés et restaurants au Maroc (**My Menu** par **WebAtlass**).
 
-- **Stack** : Vite + React + TypeScript + Tailwind CSS + React Router
-- **Prerendering statique (SSG)** : Chaque route (`/`, `/m/:slug`, `/admin/qr`, `/404`) est pré-rendue en HTML statique au moment du `npm run build` via `scripts/prerender.ts` + génération automatique de `sitemap.xml` et `robots.txt`.
-- **Zéro backend / Zéro base de données** : Déploiement instantané sur Vercel sans configuration supplémentaire.
-
----
-
-## 1. Modifier votre numéro WhatsApp, vos tarifs, vos images et vos coordonnées de paiement (`src/config.ts`)
-
-Toutes les informations de votre agence sont centralisées dans **`src/config.ts`** (Single Source of Truth) :
-
-- `whatsappNumber`: `"212633226714"` (format international sans `+` ni espaces — utilisé partout sur la landing page : bouton flottant, Hero, Tarifs, Footer, JSON-LD).
-- `phoneDisplay`: `"06 33 22 67 14"`
-- `baseUrl`: URL finale de votre site déployé. **Important** : mettez à jour `baseUrl` avec votre domaine final avant d'imprimer les QR codes clients.
-- `pricing`:
-  - `setupFee`: frais uniques de création (`300`)
-  - `monthlyPrice`: tarif mensuel (`99`)
-  - `yearlyPrice`: tarif annuel (`990`)
-  - `yearlyDiscountPercent`: `17`
-- `payment`:
-  - `rib`: votre RIB bancaire
-  - `holder`: le nom du titulaire du compte
-  - `advancePercent`: `50`
+- **Stack** : Vite + React + TypeScript + Tailwind CSS + React Router + `@supabase/supabase-js` + Prerendering statique SEO.
+- **Sécurité** : Row Level Security (RLS) activé sur toutes les tables, fonctions `SECURITY DEFINER` (`get_menu`, `place_order`, `track_event`, `create_business`, `admin_set_owner_by_email`), et **uniquement la clé publique `VITE_SUPABASE_ANON_KEY`** côté frontend (jamais de clé `service_role`).
+- **Fallback hors-ligne intégré** : Si `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` ne sont pas définies, l’application utilise automatiquement `src/menus/demo.ts` pour que `/m/demo`, `/m/demo?t=5`, `/login`, `/dashboard` et `/admin` restent 100 % fonctionnels.
 
 ---
 
-## 2. Ajouter et configurer un menu client (`src/menus/{slug}.ts`)
+## Guide d’installation pas-à-pas (Supabase + Vercel)
 
-Chaque client correspond à **un seul fichier** dans `src/menus/{slug}.ts`, automatiquement détecté et enregistré via `import.meta.glob`.
+### 1. Créer le projet Supabase et exécuter `supabase/schema.sql`
+1. Créez un nouveau projet sur [https://supabase.com](https://supabase.com).
+2. Ouvrez **SQL Editor** → **New Query**.
+3. Copiez-collez l’intégralité du fichier **`supabase/schema.sql`** et cliquez sur **Run** (s’exécute en une seule fois).
+   - Crée toutes les tables (`admins`, `businesses`, `categories`, `items`, `orders`, `customers`, `menu_events`).
+   - Active le **RLS** partout (les visiteurs anonymes ne voient que les établissements actifs et les articles disponibles, jamais les commandes ni les clients ; chaque propriétaire ne voit que son propre établissement `owner_id = auth.uid()`).
+   - Crée les fonctions `SECURITY DEFINER` (`get_menu`, `place_order`, `track_event`, `create_business`, `admin_set_owner_by_email`).
+   - Crée le bucket Storage public **`menu-images`** (images uniquement, max 2 Mo, écriture réservée au propriétaire ou admin).
+   - Active **Supabase Realtime** sur `public.orders`.
+   - Insère le restaurant de démonstration **`demo`** (thème vert My Menu `#6BBF3A`, 2 catégories, 6 articles, `table_count = 12`).
 
-### A. Couleurs & Identité (`colors`)
-Les couleurs `primary`, `accent` et `background` définies dans le fichier menu sont automatiquement appliquées à :
-- L'onglet de catégorie actif
-- Les boutons (`+`, commande WhatsApp, bannière promo)
-- Les prix (`18 د.م` en AR, `18 MAD` en FR/EN)
-- La barre de panier mobile et les anneaux de focus (`focus:ring`).
+### 2. Désactiver les inscriptions publiques (Disable Public Signups)
+1. Dans le dashboard Supabase, allez dans **Authentication** → **Providers** → **Email** (ou **Authentication** → **User Signups**).
+2. Désactivez **"Allow new users to sign up"** pour que seuls les comptes créés par votre agence puissent se connecter sur `/login`.
 
-### B. Horaires d'ouverture hebdomadaires (`weeklyHours`)
-Définissez les horaires d'ouverture jour par jour au format 24h (`HH:MM`) pour calculer automatiquement le statut **Ouvert / Fermé** en direct :
+### 3. Créer le premier Super Admin et l’insérer dans `public.admins`
+1. Dans Supabase, allez dans **Authentication** → **Users** → **Add user** → **Create new user**.
+2. Entrez votre adresse e-mail d’administrateur (ex: `admin@mymenu.ma`) et un mot de passe fort, cochez **Auto Confirm User**, puis validez.
+3. Copiez l’UUID du nouvel utilisateur ou exécutez directement dans **SQL Editor** :
+   ```sql
+   insert into public.admins (user_id)
+   select id from auth.users where email = 'admin@mymenu.ma'
+   on conflict (user_id) do nothing;
+   ```
 
-```ts
-weeklyHours: {
-  monday: { open: '07:30', close: '23:30' },
-  tuesday: { open: '07:30', close: '23:30' },
-  wednesday: { open: '07:30', close: '23:30' },
-  thursday: { open: '07:30', close: '23:30' },
-  friday: { open: '07:30', close: '23:59' },
-  saturday: { open: '08:00', close: '23:59' },
-  sunday: { open: '08:00', close: '23:30', closed: false },
-}
-```
-Si l'établissement est fermé, une bannière à fort contraste permet au client de commander pour l'ouverture ou de planifier un créneau horaire.
+### 4. Configurer les variables d’environnement (Local & Vercel)
+1. En local, copiez `.env.example` vers `.env.local` :
+   ```bash
+   cp .env.example .env.local
+   ```
+2. Renseignez vos clés publiques (depuis **Supabase Project Settings** → **API**) :
+   ```env
+   VITE_SUPABASE_URL="https://votre-projet.supabase.co"
+   VITE_SUPABASE_ANON_KEY="votre-cle-publique-anon"
+   VITE_BASE_URL="https://mymenu.ma"
+   ```
+   > **Important** : Ne mettez **JAMAIS** la clé `service_role` dans le frontend ou dans les variables `VITE_*`.
+3. Sur **Vercel** :
+   - Importez votre dépôt Git.
+   - Dans **Settings** → **Environment Variables**, ajoutez `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` et `VITE_BASE_URL`.
+   - Déployez (`npm run build` génère automatiquement le bundle client, pré-rend les pages HTML statiques SEO et génère `sitemap.xml` et `robots.txt`).
 
-### C. Modes de commande (`orderTypes`) & Zones de livraison (`delivery`)
-Activez ou désactivez chaque mode de commande pour le client :
-
-```ts
-orderTypes: {
-  dineIn: true,    // Sur place (numéro de table optionnel)
-  takeaway: true,  // À emporter (nom du client requis)
-  delivery: true,  // Livraison (nom, téléphone, adresse, GPS Google Maps, zone)
-},
-delivery: {
-  minimumOrder: 50,           // Commande bloquée en livraison si sous-total < 50 MAD
-  freeDeliveryThreshold: 120, // Livraison gratuite dès 120 MAD d'achat
-  zones: [
-    {
-      id: 'marina-centre',
-      name: { ar: 'مارينا ووسط المدينة', fr: 'Marina & Centre-Ville', en: 'Marina & Center' },
-      fee: 10,
-      estimatedTime: { ar: '20 إلى 30 دقيقة', fr: '20 à 30 min', en: '20 to 30 mins' },
-    },
-  ],
-}
-```
-
-### D. Bannière Promo (`promoBanner`), Populaires (`popular`) & Ventes additionnelles (`upsellItemIds`)
-- **`promoBanner`** : affiche une carte promotionnelle en haut du menu avec titre, sous-titre, badge, image et bouton qui scrolle vers `targetCategoryId`.
-- **`popular: true`** : place automatiquement l'article dans la section **"Les plus populaires"** (`الأكثر طلباً` / `Most Popular`) et ajoute le badge Populaire.
-- **`upsellItemIds: ['item-id-1', 'item-id-2']`** : affiche jusqu'à 2 suggestions dans le panier sous **"Complétez votre commande"** pour augmenter le panier moyen.
-
-### E. Options d'articles (`options`) & Allergènes (`allergens`)
-Chaque article peut définir des allergènes en 3 langues ainsi que des groupes d'options à choix unique (`single`, ex: Taille, Cuisson) ou choix multiples (`multiple`, ex: Suppléments) avec supplément de prix :
-
-```ts
-allergens: {
-  ar: ['الحليب (اللاكتوز)'],
-  fr: ['Lait (lactose)'],
-  en: ['Milk (lactose)'],
-},
-options: [
-  {
-    id: 'size',
-    name: { ar: 'الحجم', fr: 'Taille', en: 'Size' },
-    type: 'single',
-    required: true,
-    choices: [
-      { id: 'regular', name: { ar: 'عادي', fr: 'Classique', en: 'Regular' }, price: 0 },
-      { id: 'large', name: { ar: 'كبير', fr: 'Grand', en: 'Large' }, price: 6 },
-    ],
-  },
-  {
-    id: 'extras',
-    name: { ar: 'إضافات', fr: 'Suppléments', en: 'Extras' },
-    type: 'multiple',
-    choices: [
-      { id: 'oat-milk', name: { ar: 'حليب الشوفان', fr: 'Lait d’avoine', en: 'Oat milk' }, price: 5 },
-    ],
-  },
-]
-```
-
----
-
-## 3. Générer et imprimer les QR codes & Chevalets de table A5 (`/admin/qr`)
-
-Rendez-vous sur **`/admin/qr`** (page privée avec balise `noindex, nofollow`, exclue du `sitemap.xml` et bloquée dans `robots.txt`) pour exporter :
-- **Download PNG** / **Download SVG**
-- **Download A5 PDF** / **Print A5 Sheet** (chevalet de table A5 prêt à imprimer)
-- **Download all QR codes (ZIP)**
-
----
-
-## 4. Déployer sur Vercel
-
-1. Poussez ce dépôt sur GitHub / GitLab.
-2. Importez le projet dans **Vercel** (`Framework Preset: Vite`, `Build Command: npm run build`, `Output Directory: dist`).
-3. Le fichier `vercel.json` inclus sert automatiquement chaque page pré-rendue.
+### 5. Créer un client café/restaurant et remettre ses accès au propriétaire
+1. Dans **Supabase Authentication** → **Users** → **Add user**, créez le compte e-mail/mot de passe du propriétaire du café (ex: `client@cafemajorelle.ma`) avec **Auto Confirm User** coché.
+2. Connectez-vous sur **`/login`** avec votre compte Super Admin (`admin@mymenu.ma`) et ouvrez **`/admin`**.
+3. Dans le formulaire **"Nouveau client"**, renseignez :
+   - **Nom** : `Café Majorelle`
+   - **Slug** : `cafe-majorelle`
+   - **E-mail du propriétaire** : `client@cafemajorelle.ma`
+   - **Nombre de tables** : ex. `15`
+4. Cliquez sur **"+ Créer le client"** (appelle `create_business` : crée le restaurant, lie automatiquement `owner_id` à l’e-mail du propriétaire et crée les catégories par défaut).
+5. Cliquez sur **"Pack QR Tables"** pour télécharger en un clic le ZIP des PNG (`table-1.png`..`table-15.png`) ou les planches PDF A6 / A4 (6 chevalets par page).
+6. Envoyez au propriétaire son lien **`/login`**, son e-mail et son mot de passe pour qu’il gère ses commandes en direct, ses produits et ses tables sur **`/dashboard`**.

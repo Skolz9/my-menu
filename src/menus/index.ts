@@ -2,9 +2,12 @@ import { demoMenu } from './demo';
 import type { ClientMenu } from './types';
 
 // Auto-register every client menu file in src/menus/*.ts using Vite's import.meta.glob
-const menuModules = import.meta.glob<Record<string, unknown>>('./*.ts', {
-  eager: true,
-});
+const menuModules =
+  typeof import.meta.glob === 'function'
+    ? import.meta.glob<Record<string, unknown>>('./*.ts', {
+        eager: true,
+      })
+    : {};
 
 const menusMap: Record<string, ClientMenu> = {};
 

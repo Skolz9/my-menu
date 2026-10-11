@@ -1,10 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Flame, QrCode, Sparkles, ArrowUpRight } from 'lucide-react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Flame,
+  QrCode,
+  Sparkles,
+  ArrowUpRight,
+  Lock,
+  Clock,
+  UtensilsCrossed,
+} from 'lucide-react';
 import {
   getMenuBySlug,
   getLocalized,
   checkBusinessOpenStatus,
+  validateTableLabel,
+  type ClientMenu,
   type Language,
   type MenuItem,
   type OrderType,
@@ -27,15 +37,73 @@ import {
 import { PriceDisplay } from './PriceDisplay';
 import { SeoHead } from './SeoHead';
 import { NotFoundPage } from './NotFoundPage';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import {
+  fetchPublicMenu,
+  loadLocalBusinesses,
+  subscribeToRealtimeChanges,
+  trackMenuEvent,
+} from '../lib/store';
 
 const CUSTOMER_STORAGE_KEY = 'mymenu_customer_details_v1';
 
+const UNAVAILABLE_TEXT: Record<
+  Language,
+  {
+    badge: string;
+    title: string;
+    subtitle: string;
+    footer: string;
+  }
+> = {
+  ar: {
+    badge: 'القائمة غير متاحة مؤقتاً',
+    title: 'هذه القائمة غير متاحة حالياً',
+    subtitle:
+      'يرجى مراجعة موظفي المقهى أو المحاولة لاحقاً. شكراً لتفهمكم.',
+    footer: 'Menu by My Menu',
+  },
+  fr: {
+    badge: 'Menu temporairement indisponible',
+    title: 'Menu temporairement indisponible',
+    subtitle:
+      'Ce menu digital est momentanément désactivé. Veuillez vous adresser au personnel de l’établissement.',
+    footer: 'Menu by My Menu',
+  },
+  en: {
+    badge: 'Menu temporarily unavailable',
+    title: 'Menu temporarily unavailable',
+    subtitle:
+      'This digital menu is currently unavailable. Please ask a member of staff for assistance.',
+    footer: 'Menu by My Menu',
+  },
+};
+
 export const MenuPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const menu = getMenuBySlug(slug);
+  const [searchParams] = useSearchParams();
+  const rawTableParam = searchParams.get('t');
+
+  // Resolve initial state synchronously for SSR prerendering + instant mount
+  const initialLocalBiz = useMemo(() => {
+    const clean = (slug || '').trim().toLowerCase();
+    const fromStore = loadLocalBusinesses().find(
+      (b) => b.slug.toLowerCase() === clean
+    );
+    return fromStore || getMenuBySlug(clean);
+  }, [slug]);
+
+  const [menu, setMenu] = useState<ClientMenu | undefined>(initialLocalBiz);
+  const [isInactive, setIsInactive] = useState<boolean>(
+    initialLocalBiz ? initialLocalBiz.isActive === false : false
+  );
+  const [inactiveName, setInactiveName] = useState<string>(
+    initialLocalBiz?.name || ''
+  );
+  const [notFound, setNotFound] = useState<boolean>(!initialLocalBiz);
 
   const [menuLang, setMenuLang] = useState<Language>(
-    menu?.defaultLanguage || 'ar'
+    initialLocalBiz?.defaultLanguage || 'ar'
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('popular');
@@ -50,13 +118,70 @@ export const MenuPage: React.FC = () => {
   // Open / Closed live status + simulation toggle
   const [simulateClosed, setSimulateClosed] = useState(false);
 
-  // Order type state
+  // Fetch from Supabase `get_menu` RPC + subscribe to live changes
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (!slug) {
+        setNotFound(true);
+        return;
+      }
+      const res = await fetchPublicMenu(slug);
+      if (!mounted) return;
+      if (res.status === 'not_found') {
+        setNotFound(true);
+        setMenu(undefined);
+      } else if (res.status === 'inactive') {
+        setNotFound(false);
+        setIsInactive(true);
+        setInactiveName(res.name);
+        setMenuLang(res.defaultLanguage || 'ar');
+      } else {
+        setNotFound(false);
+        setIsInactive(false);
+        setMenu(res.menu);
+      }
+    };
+
+    load();
+    const unsubscribe = subscribeToRealtimeChanges(() => {
+      load();
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [slug]);
+
+  // Validate `?t={label}` against business derived table labels ("1".."table_count" + extra_tables)
+  const lockedTableLabel = useMemo(() => {
+    if (!menu || !rawTableParam) return null;
+    return validateTableLabel(
+      rawTableParam,
+      menu.tableCount ?? 12,
+      menu.extraTables ?? []
+    );
+  }, [menu, rawTableParam]);
+
+  // Track menu view / QR scan event once per slug + table visit
+  useEffect(() => {
+    if (!slug || isInactive || notFound) return;
+    trackMenuEvent(
+      slug,
+      lockedTableLabel ? 'qr_scan' : 'view',
+      lockedTableLabel
+    );
+  }, [slug, lockedTableLabel, isInactive, notFound]);
+
+  // Default Order type state
   const defaultOrderType: OrderType = useMemo(() => {
+    if (lockedTableLabel) return 'dineIn';
     if (!menu) return 'dineIn';
     if (menu.orderTypes.dineIn) return 'dineIn';
     if (menu.orderTypes.takeaway) return 'takeaway';
     return 'delivery';
-  }, [menu]);
+  }, [menu, lockedTableLabel]);
 
   const [orderType, setOrderType] = useState<OrderType>(defaultOrderType);
 
@@ -67,9 +192,21 @@ export const MenuPage: React.FC = () => {
     address: '',
     locationLink: '',
     deliveryZoneId: menu?.delivery.zones[0]?.id || '',
-    tableNumber: '',
+    tableNumber: lockedTableLabel || '',
+    marketingConsent: false,
   }));
   const [hasSavedDetails, setHasSavedDetails] = useState(false);
+
+  // Whenever lockedTableLabel is present, lock orderType = 'dineIn' and tableNumber = lockedTableLabel
+  useEffect(() => {
+    if (lockedTableLabel) {
+      setOrderType('dineIn');
+      setCustomer((prev) => ({
+        ...prev,
+        tableNumber: lockedTableLabel,
+      }));
+    }
+  }, [lockedTableLabel]);
 
   // Load saved customer details on mount
   useEffect(() => {
@@ -85,6 +222,7 @@ export const MenuPage: React.FC = () => {
           address: parsed.address || '',
           deliveryZoneId:
             parsed.deliveryZoneId || menu?.delivery.zones[0]?.id || '',
+          tableNumber: lockedTableLabel || prev.tableNumber || '',
         }));
         if (parsed.name || parsed.phone || parsed.address) {
           setHasSavedDetails(true);
@@ -93,11 +231,15 @@ export const MenuPage: React.FC = () => {
     } catch {
       // Ignore storage errors
     }
-  }, [menu]);
+  }, [menu, lockedTableLabel]);
 
   const handleCustomerChange = (patch: Partial<CustomerDetails>) => {
     setCustomer((prev) => {
-      const next = { ...prev, ...patch };
+      const next = {
+        ...prev,
+        ...patch,
+        tableNumber: lockedTableLabel || (patch.tableNumber ?? prev.tableNumber),
+      };
       if (typeof window !== 'undefined') {
         try {
           window.localStorage.setItem(
@@ -134,7 +276,8 @@ export const MenuPage: React.FC = () => {
       address: '',
       locationLink: '',
       deliveryZoneId: menu?.delivery.zones[0]?.id || '',
-      tableNumber: '',
+      tableNumber: lockedTableLabel || '',
+      marketingConsent: false,
     });
     setHasSavedDetails(false);
   };
@@ -143,7 +286,7 @@ export const MenuPage: React.FC = () => {
     if (menu) {
       setMenuLang(menu.defaultLanguage);
     }
-  }, [menu]);
+  }, [menu?.slug]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -173,7 +316,7 @@ export const MenuPage: React.FC = () => {
     } else if (menu.categories[0]) {
       setActiveCategoryId(menu.categories[0].id);
     }
-  }, [menu, popularItems.length]);
+  }, [menu?.slug, popularItems.length]);
 
   // Scroll-spy for category sections
   useEffect(() => {
@@ -256,12 +399,65 @@ export const MenuPage: React.FC = () => {
       .slice(0, 2);
   }, [menu, itemQuantityMap]);
 
-  if (!menu) {
+  // 1. Inactive Business Neutral Page ("Menu temporarily unavailable")
+  if (isInactive) {
+    const uText = UNAVAILABLE_TEXT[menuLang];
+    const dir = menuLang === 'ar' ? 'rtl' : 'ltr';
+    return (
+      <div
+        dir={dir}
+        className="min-h-screen bg-[#FAF8F5] flex flex-col justify-between p-6"
+      >
+        <div className="max-w-md w-full mx-auto flex justify-end pt-2">
+          <LanguageSwitcher
+            availableLanguages={['ar', 'fr', 'en']}
+            activeLanguage={menuLang}
+            onSelectLanguage={setMenuLang}
+          />
+        </div>
+
+        <div className="max-w-md w-full mx-auto bg-white rounded-3xl border border-neutral-200/90 p-8 text-center shadow-xs space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-neutral-100 text-neutral-500 flex items-center justify-center mx-auto">
+            <UtensilsCrossed className="w-7 h-7" />
+          </div>
+          {inactiveName && (
+            <p className="text-xs font-extrabold uppercase tracking-wider text-neutral-400">
+              {inactiveName}
+            </p>
+          )}
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-100 text-neutral-700 text-xs font-bold">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{uText.badge}</span>
+          </span>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-neutral-950">
+            {uText.title}
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
+            {uText.subtitle}
+          </p>
+        </div>
+
+        <footer className="py-4 text-center">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-neutral-700"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>{uText.footer}</span>
+          </Link>
+        </footer>
+      </div>
+    );
+  }
+
+  // 2. 404 Not Found
+  if (notFound || !menu) {
     return <NotFoundPage />;
   }
 
   const t = translations[menuLang].menuPage;
   const dir = menuLang === 'ar' ? 'rtl' : 'ltr';
+  const tableWord = menuLang === 'ar' ? 'طاولة' : 'Table';
 
   const liveStatus = checkBusinessOpenStatus(menu.weeklyHours);
   const isOpen = simulateClosed ? false : liveStatus.isOpen;
@@ -282,7 +478,7 @@ export const MenuPage: React.FC = () => {
     }
   };
 
-  // Add item with specific options & note (from ItemDetailModal or default card stepper)
+  // Add item with specific options & note
   const handleAddWithOptions = (
     item: MenuItem,
     quantityToAdd: number,
@@ -314,13 +510,11 @@ export const MenuPage: React.FC = () => {
     });
   };
 
-  // Direct card "+" button
   const handleCardIncrement = (item: MenuItem) => {
     const defaultOpts = getDefaultSelectedOptions(item);
     handleAddWithOptions(item, 1, defaultOpts, '');
   };
 
-  // Direct card "-" button (decrements the most recent cart line for this item)
   const handleCardDecrement = (item: MenuItem) => {
     setCartLines((prev) => {
       for (let i = prev.length - 1; i >= 0; i--) {
@@ -369,6 +563,8 @@ export const MenuPage: React.FC = () => {
     0
   );
 
+  const effectiveOrderType: OrderType = lockedTableLabel ? 'dineIn' : orderType;
+
   const selectedZone =
     menu.delivery.zones.find((z) => z.id === customer.deliveryZoneId) ||
     menu.delivery.zones[0];
@@ -376,14 +572,16 @@ export const MenuPage: React.FC = () => {
     menu.delivery.freeDeliveryThreshold > 0 &&
     subtotal >= menu.delivery.freeDeliveryThreshold;
   const deliveryFee =
-    orderType === 'delivery'
+    effectiveOrderType === 'delivery'
       ? isFreeDelivery
         ? 0
         : selectedZone?.fee || 0
       : 0;
   const grandTotal = subtotal + deliveryFee;
 
-  const menuUrl = `${getBaseUrl()}/m/${menu.slug}`;
+  const menuUrl = lockedTableLabel
+    ? `${getBaseUrl()}/m/${menu.slug}?t=${encodeURIComponent(lockedTableLabel)}`
+    : `${getBaseUrl()}/m/${menu.slug}`;
 
   return (
     <div
@@ -414,6 +612,7 @@ export const MenuPage: React.FC = () => {
               simulateClosed={simulateClosed}
               onToggleSimulateClosed={() => setSimulateClosed((prev) => !prev)}
               onOpenQrModal={() => setQrModalOpen(true)}
+              lockedTableLabel={lockedTableLabel}
             />
           </div>
 
@@ -584,7 +783,7 @@ export const MenuPage: React.FC = () => {
               isOpen={isOpen}
               cartItems={cartLines}
               upsellItems={upsellItems}
-              orderType={orderType}
+              orderType={effectiveOrderType}
               onOrderTypeChange={setOrderType}
               customer={customer}
               onCustomerChange={handleCustomerChange}
@@ -596,6 +795,7 @@ export const MenuPage: React.FC = () => {
               onQuickAddUpsell={handleCardIncrement}
               onClearCart={() => setCartLines([])}
               onOpenWaiterModal={() => setWaiterModalOpen(true)}
+              lockedTableLabel={lockedTableLabel}
             />
           </div>
         </div>
@@ -626,13 +826,21 @@ export const MenuPage: React.FC = () => {
             className="w-full max-w-lg mx-auto rounded-2xl px-4 py-3.5 text-white shadow-xl flex items-center justify-between gap-3 cursor-pointer active:scale-[0.99] transition-transform"
             style={{ backgroundColor: menu.colors.accent || '#18181B' }}
           >
-            <div className="flex items-center gap-2.5 text-xs sm:text-sm font-extrabold">
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold">
               <span
                 className="px-2.5 py-1 rounded-lg text-white font-extrabold tabular-nums"
                 style={{ backgroundColor: menu.colors.primary }}
               >
                 {formatItemCountLabel(totalCount)}
               </span>
+              {lockedTableLabel && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/15 text-[11px] font-extrabold text-white">
+                  <Lock className="w-2.5 h-2.5" />
+                  <span>
+                    {tableWord} {lockedTableLabel}
+                  </span>
+                </span>
+              )}
               <span aria-hidden="true">·</span>
               <PriceDisplay
                 amount={grandTotal}
@@ -669,7 +877,7 @@ export const MenuPage: React.FC = () => {
               isOpen={isOpen}
               cartItems={cartLines}
               upsellItems={upsellItems}
-              orderType={orderType}
+              orderType={effectiveOrderType}
               onOrderTypeChange={setOrderType}
               customer={customer}
               onCustomerChange={handleCustomerChange}
@@ -688,6 +896,7 @@ export const MenuPage: React.FC = () => {
                 setWaiterModalOpen(true);
               }}
               onCloseMobileDrawer={() => setMobileCartOpen(false)}
+              lockedTableLabel={lockedTableLabel}
             />
           </div>
         </div>
@@ -707,8 +916,11 @@ export const MenuPage: React.FC = () => {
         open={waiterModalOpen}
         onClose={() => setWaiterModalOpen(false)}
         cartItems={cartLines}
-        tableNumber={customer.tableNumber}
-        onTableNumberChange={(val) => handleCustomerChange({ tableNumber: val })}
+        tableNumber={lockedTableLabel || customer.tableNumber}
+        onTableNumberChange={(val) => {
+          if (lockedTableLabel) return;
+          handleCustomerChange({ tableNumber: val });
+        }}
         totalAmount={grandTotal}
         lang={menuLang}
         menu={menu}

@@ -85,9 +85,13 @@ export interface OrderTypesConfig {
 export type OrderType = 'dineIn' | 'takeaway' | 'delivery';
 
 export interface ClientMenu {
+  id?: string;
+  ownerId?: string;
+  ownerEmail?: string;
   slug: string;
   name: string;
   logo: string;
+  cover?: string;
   tagline: LocalizedString;
   city: string;
   languages: Language[];
@@ -111,7 +115,45 @@ export interface ClientMenu {
   upsellItemIds?: string[];
   orderTypes: OrderTypesConfig;
   delivery: DeliveryConfig;
+  tableCount?: number;
+  extraTables?: string[];
+  tableLabels?: string[];
+  isActive?: boolean;
+  acceptingOrders?: boolean;
   categories: MenuCategory[];
+}
+
+/**
+ * Automatically derives the list of table labels for a business:
+ * "1" .. String(tableCount) followed by any non-empty extraTables (e.g. "Terrasse 1", "VIP").
+ */
+export function deriveTableLabels(
+  tableCount: number = 10,
+  extraTables: string[] = []
+): string[] {
+  const safeCount = Math.max(0, Math.min(500, Math.floor(Number(tableCount) || 0)));
+  const numbered = Array.from({ length: safeCount }, (_, i) => String(i + 1));
+  const extras = (extraTables || [])
+    .map((t) => String(t).trim())
+    .filter((t) => t.length > 0 && !numbered.includes(t));
+  return [...numbered, ...extras];
+}
+
+/**
+ * Validates a URL query parameter `?t={label}` against the business's derived table labels.
+ * Returns the canonical table label if valid, or null if invalid.
+ */
+export function validateTableLabel(
+  rawLabel: string | null | undefined,
+  tableCount: number = 10,
+  extraTables: string[] = []
+): string | null {
+  if (!rawLabel) return null;
+  const trimmed = rawLabel.trim();
+  if (!trimmed) return null;
+  const allowed = deriveTableLabels(tableCount, extraTables);
+  const match = allowed.find((t) => t.toLowerCase() === trimmed.toLowerCase());
+  return match || null;
 }
 
 export function getLocalized(value: LocalizedString, lang: Language): string {

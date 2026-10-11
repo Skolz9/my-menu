@@ -8,9 +8,13 @@ export const FloatingWhatsApp: React.FC = () => {
   const { t, dir } = useLanguage();
   const location = useLocation();
 
-  // Hide agency floating WhatsApp button on client menu pages (/m/:slug) and admin QR page
-  // so it never overlaps the mobile sticky bottom cart bar and keeps client menus white-labeled.
-  if (location.pathname.startsWith('/m/') || location.pathname.startsWith('/admin')) {
+  // Hide agency floating WhatsApp button on client menu pages (/m/:slug), dashboard, login, and admin
+  if (
+    location.pathname.startsWith('/m/') ||
+    location.pathname.startsWith('/dashboard') ||
+    location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/login')
+  ) {
     return null;
   }
 
