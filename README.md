@@ -4,7 +4,7 @@ Plateforme complète de menus QR digitaux, commandes WhatsApp et gestion multi-r
 
 - **Stack** : Vite + React + TypeScript + Tailwind CSS + React Router + `@supabase/supabase-js` + Prerendering statique SEO.
 - **Sécurité** : Row Level Security (RLS) activé sur toutes les tables, fonctions `SECURITY DEFINER` (`get_menu`, `place_order`, `track_event`, `create_business`, `admin_set_owner_by_email`), et **uniquement la clé publique `VITE_SUPABASE_ANON_KEY`** côté frontend (jamais de clé `service_role`).
-- **Fallback hors-ligne intégré** : Si `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` ne sont pas définies, l’application utilise automatiquement `src/menus/demo.ts` pour que `/m/demo`, `/m/demo?t=5`, `/login`, `/dashboard` et `/admin` restent 100 % fonctionnels.
+- **Fallback menu public** : Si `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` ne sont pas définies, le menu public `/m/demo` utilise `src/menus/demo.ts`, tandis que la connexion `/login` est désactivée tant que la configuration Supabase est manquante.
 
 ---
 
@@ -19,7 +19,7 @@ Plateforme complète de menus QR digitaux, commandes WhatsApp et gestion multi-r
    - Crée les fonctions `SECURITY DEFINER` (`get_menu`, `place_order`, `track_event`, `create_business`, `admin_set_owner_by_email`).
    - Crée le bucket Storage public **`menu-images`** (images uniquement, max 2 Mo, écriture réservée au propriétaire ou admin).
    - Active **Supabase Realtime** sur `public.orders`.
-   - Insère le restaurant de démonstration **`demo`** (thème vert My Menu `#6BBF3A`, 2 catégories, 6 articles, `table_count = 12`).
+   - Insère le restaurant d’exemple **`demo`** (thème vert My Menu `#6BBF3A`, 2 catégories, 6 articles, `table_count = 12`).
 
 ### 2. Désactiver les inscriptions publiques (Disable Public Signups)
 1. Dans le dashboard Supabase, allez dans **Authentication** → **Providers** → **Email** (ou **Authentication** → **User Signups**).
@@ -27,11 +27,11 @@ Plateforme complète de menus QR digitaux, commandes WhatsApp et gestion multi-r
 
 ### 3. Créer le premier Super Admin et l’insérer dans `public.admins`
 1. Dans Supabase, allez dans **Authentication** → **Users** → **Add user** → **Create new user**.
-2. Entrez votre adresse e-mail d’administrateur (ex: `admin@mymenu.ma`) et un mot de passe fort, cochez **Auto Confirm User**, puis validez.
+2. Entrez votre adresse e-mail d’administrateur et un mot de passe fort, cochez **Auto Confirm User**, puis validez.
 3. Copiez l’UUID du nouvel utilisateur ou exécutez directement dans **SQL Editor** :
    ```sql
    insert into public.admins (user_id)
-   select id from auth.users where email = 'admin@mymenu.ma'
+   select id from auth.users where email = 'name@restaurant.com'
    on conflict (user_id) do nothing;
    ```
 
@@ -53,13 +53,13 @@ Plateforme complète de menus QR digitaux, commandes WhatsApp et gestion multi-r
    - Déployez (`npm run build` génère automatiquement le bundle client, pré-rend les pages HTML statiques SEO et génère `sitemap.xml` et `robots.txt`).
 
 ### 5. Créer un client café/restaurant et remettre ses accès au propriétaire
-1. Dans **Supabase Authentication** → **Users** → **Add user**, créez le compte e-mail/mot de passe du propriétaire du café (ex: `client@cafemajorelle.ma`) avec **Auto Confirm User** coché.
-2. Connectez-vous sur **`/login`** avec votre compte Super Admin (`admin@mymenu.ma`) et ouvrez **`/admin`**.
+1. Dans **Supabase Authentication** → **Users** → **Add user**, créez le compte du propriétaire du café (ex: `name@restaurant.com`) avec **Auto Confirm User** coché.
+2. Connectez-vous sur **`/login`** avec votre compte Super Admin et ouvrez **`/admin`**.
 3. Dans le formulaire **"Nouveau client"**, renseignez :
    - **Nom** : `Café Majorelle`
    - **Slug** : `cafe-majorelle`
-   - **E-mail du propriétaire** : `client@cafemajorelle.ma`
+   - **E-mail du propriétaire** : `name@restaurant.com`
    - **Nombre de tables** : ex. `15`
 4. Cliquez sur **"+ Créer le client"** (appelle `create_business` : crée le restaurant, lie automatiquement `owner_id` à l’e-mail du propriétaire et crée les catégories par défaut).
 5. Cliquez sur **"Pack QR Tables"** pour télécharger en un clic le ZIP des PNG (`table-1.png`..`table-15.png`) ou les planches PDF A6 / A4 (6 chevalets par page).
-6. Envoyez au propriétaire son lien **`/login`**, son e-mail et son mot de passe pour qu’il gère ses commandes en direct, ses produits et ses tables sur **`/dashboard`**.
+6. Envoyez au propriétaire son lien **`/login`** et ses identifiants pour qu’il gère ses commandes en direct, ses produits et ses tables sur **`/dashboard`**.

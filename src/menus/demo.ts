@@ -3,8 +3,6 @@ import type { ClientMenu } from './types';
 
 export const demoMenu: ClientMenu = {
   id: '00000000-0000-4000-8000-000000000001',
-  ownerId: 'owner-demo-uid',
-  ownerEmail: 'owner@mymenu.ma',
   slug: 'demo',
   name: 'Marina Sol Café',
   logo: config.images.demoMenu.logo,

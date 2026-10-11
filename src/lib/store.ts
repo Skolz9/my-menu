@@ -110,59 +110,6 @@ const STORAGE_KEYS = {
 
 const CHANNEL_NAME = 'mymenu_realtime_channel_v2';
 
-// Second fictional business for testing strict owner RLS isolation
-const secondBusinessMenu: ClientMenu = {
-  id: '00000000-0000-4000-8000-000000000002',
-  ownerId: 'owner-casa-uid',
-  ownerEmail: 'casa@mymenu.ma',
-  slug: 'atlas-garden',
-  name: 'Atlas Garden Café',
-  logo: config.images.demoMenu.logo,
-  cover: config.images.demoMenu.cover,
-  tagline: {
-    ar: 'مقهى عصري ومخبزة حرفية في قلب الدار البيضاء',
-    fr: 'Coffee shop botanique & boulangerie artisanale à Casablanca',
-    en: 'Botanical coffee shop & artisanal bakery in Casablanca',
-  },
-  city: 'Casablanca',
-  languages: ['ar', 'fr', 'en'],
-  defaultLanguage: 'fr',
-  colors: {
-    primary: '#059669',
-    accent: '#18181B',
-    background: '#FAF8F5',
-  },
-  tableCount: 8,
-  extraTables: ['Patio 1'],
-  isActive: true,
-  acceptingOrders: true,
-  currency: 'MAD',
-  contact: {
-    whatsapp: config.whatsappNumber,
-    phone: '+212 5 22 36 00 00',
-    instagram: 'https://instagram.com/mymenu.ma',
-    mapsLink: 'https://maps.google.com/?q=Anfa+Casablanca+Morocco',
-    address: {
-      ar: 'شارع أنفا، الدار البيضاء، المغرب',
-      fr: 'Boulevard d’Anfa, Quartier Racine, Casablanca',
-      en: 'Anfa Boulevard, Racine District, Casablanca',
-    },
-  },
-  hours: {
-    ar: 'يومياً من 08:00 صباحاً إلى 11:00 ليلاً',
-    fr: 'Tous les jours de 08h00 à 23h00',
-    en: 'Daily from 08:00 AM to 11:00 PM',
-  },
-  weeklyHours: demoMenu.weeklyHours,
-  orderTypes: {
-    dineIn: true,
-    takeaway: true,
-    delivery: true,
-  },
-  delivery: demoMenu.delivery,
-  categories: demoMenu.categories.slice(0, 2),
-};
-
 function broadcastChange(type: string, payload?: unknown) {
   if (typeof window === 'undefined') return;
   try {
@@ -218,21 +165,14 @@ export function subscribeToRealtimeChanges(
 }
 
 function getInitialBusinesses(): ClientMenu[] {
-  const baseList: ClientMenu[] = allMenus.map((m) => ({
+  return allMenus.map((m) => ({
     ...m,
-    id: m.id || (m.slug === 'demo' ? '00000000-0000-4000-8000-000000000001' : `biz-${m.slug}`),
-    ownerId: m.ownerId || (m.slug === 'demo' ? 'owner-demo-uid' : `owner-${m.slug}`),
-    ownerEmail: m.ownerEmail || (m.slug === 'demo' ? 'owner@mymenu.ma' : `${m.slug}@mymenu.ma`),
+    id: m.id || `biz-${m.slug}`,
     tableCount: m.tableCount ?? 12,
     extraTables: m.extraTables ?? ['Terrasse 1', 'VIP'],
     isActive: m.isActive ?? true,
     acceptingOrders: m.acceptingOrders ?? true,
   }));
-
-  if (!baseList.some((b) => b.slug === 'atlas-garden')) {
-    baseList.push(secondBusinessMenu);
-  }
-  return baseList;
 }
 
 export function loadLocalBusinesses(): ClientMenu[] {
@@ -261,231 +201,15 @@ export function saveLocalBusinesses(list: ClientMenu[]): void {
   }
 }
 
-function getInitialOrders(): OrderRecord[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'ord-demo-1',
-      business_id: '00000000-0000-4000-8000-000000000001',
-      slug: 'demo',
-      code: 'MM-4812',
-      type: 'dineIn',
-      table_label: '3',
-      customer_name: 'Yassine Benali',
-      phone: '0661234567',
-      address: '',
-      location_url: '',
-      items: [
-        {
-          item_id: 'nous-nous',
-          name: {
-            ar: 'قهوة نص نص مغربية أرابيكا',
-            fr: 'Café Nous-Nous Marocain Pur Arabica',
-            en: 'Moroccan Nous-Nous Arabica Coffee',
-          },
-          quantity: 2,
-          unit_price: 18,
-          line_total: 36,
-          selected_options: { size: ['regular'] },
-          option_labels: ['Classique'],
-          note: 'Sans sucre',
-        },
-        {
-          item_id: 'ftour-amazigh',
-          name: {
-            ar: 'فطور أمازيغي بلدي (أملو وأركان)',
-            fr: 'Ftour Beldi Amazigh (Amlou & Argan)',
-            en: 'Amazigh Beldi Breakfast (Amlou & Argan)',
-          },
-          quantity: 1,
-          unit_price: 58,
-          line_total: 58,
-          selected_options: { 'hot-drink': ['mint-tea'] },
-          option_labels: ['Thé à la menthe'],
-          note: '',
-        },
-      ],
-      subtotal: 94,
-      delivery_fee: 0,
-      total: 94,
-      notes: '',
-      status: 'preparing',
-      created_at: new Date(now - 22 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'ord-demo-2',
-      business_id: '00000000-0000-4000-8000-000000000001',
-      slug: 'demo',
-      code: 'MM-4809',
-      type: 'delivery',
-      table_label: null,
-      customer_name: 'Salma El Idrissi',
-      phone: '0668991122',
-      address: 'Résidence Marina Bay, Imm B, Appt 14, Agadir',
-      location_url: 'https://maps.google.com/?q=30.427755,-9.613412',
-      items: [
-        {
-          item_id: 'pizza-margherita',
-          name: {
-            ar: 'بيتزا مارغريتا نابوليتانا على الحطب',
-            fr: 'Pizza Margherita Napolitaine au Feu de Bois',
-            en: 'Wood-Fired Neapolitan Margherita Pizza',
-          },
-          quantity: 1,
-          unit_price: 55,
-          line_total: 55,
-          selected_options: {},
-          option_labels: [],
-          note: '',
-        },
-        {
-          item_id: 'tiramisu-cafe',
-          name: {
-            ar: 'تيراميسو إيطالي بالقهوة والماسكاربوني',
-            fr: 'Tiramisu Italien au Café & Mascarpone',
-            en: 'Artisanal Coffee & Mascarpone Tiramisu',
-          },
-          quantity: 1,
-          unit_price: 36,
-          line_total: 36,
-          selected_options: {},
-          option_labels: [],
-          note: '',
-        },
-      ],
-      subtotal: 91,
-      delivery_fee: 10,
-      total: 101,
-      notes: '',
-      status: 'delivered',
-      created_at: new Date(now - 95 * 60 * 1000).toISOString(),
-    },
-    // Order belonging to the 2nd business (atlas-garden) to verify strict owner isolation
-    {
-      id: 'ord-casa-1',
-      business_id: '00000000-0000-4000-8000-000000000002',
-      slug: 'atlas-garden',
-      code: 'MM-9001',
-      type: 'dineIn',
-      table_label: '2',
-      customer_name: 'Karim Tazi (Client Casa)',
-      phone: '0655443322',
-      address: '',
-      location_url: '',
-      items: [
-        {
-          item_id: 'nous-nous',
-          name: {
-            ar: 'قهوة نص نص مغربية أرابيكا',
-            fr: 'Café Nous-Nous Marocain Pur Arabica',
-            en: 'Moroccan Nous-Nous Arabica Coffee',
-          },
-          quantity: 1,
-          unit_price: 18,
-          line_total: 18,
-          selected_options: {},
-          option_labels: [],
-          note: '',
-        },
-      ],
-      subtotal: 18,
-      delivery_fee: 0,
-      total: 18,
-      notes: '',
-      status: 'new',
-      created_at: new Date(now - 40 * 60 * 1000).toISOString(),
-    },
-  ];
-}
-
-function getInitialCustomers(): CustomerRecord[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'cust-demo-1',
-      business_id: '00000000-0000-4000-8000-000000000001',
-      name: 'Yassine Benali',
-      phone: '0661234567',
-      orders_count: 4,
-      total_spent: 340,
-      last_order_at: new Date(now - 22 * 60 * 1000).toISOString(),
-      notes: 'Client régulier le matin, préfère la table 3 ou Terrasse 1',
-      marketing_consent: true,
-      created_at: new Date(now - 14 * 86400 * 1000).toISOString(),
-    },
-    {
-      id: 'cust-demo-2',
-      business_id: '00000000-0000-4000-8000-000000000001',
-      name: 'Salma El Idrissi',
-      phone: '0668991122',
-      orders_count: 2,
-      total_spent: 215,
-      last_order_at: new Date(now - 95 * 60 * 1000).toISOString(),
-      notes: 'Livraison Marina Bay',
-      marketing_consent: true,
-      created_at: new Date(now - 7 * 86400 * 1000).toISOString(),
-    },
-    {
-      id: 'cust-demo-3',
-      business_id: '00000000-0000-4000-8000-000000000001',
-      name: 'Mehdi Ouhssain',
-      phone: '0677889900',
-      orders_count: 1,
-      total_spent: 78,
-      last_order_at: new Date(now - 42 * 86400 * 1000).toISOString(),
-      notes: 'Inactif depuis plus de 30 jours',
-      marketing_consent: false,
-      created_at: new Date(now - 42 * 86400 * 1000).toISOString(),
-    },
-    // Customer belonging to 2nd business (atlas-garden) to verify strict owner isolation
-    {
-      id: 'cust-casa-1',
-      business_id: '00000000-0000-4000-8000-000000000002',
-      name: 'Karim Tazi (Client Casa)',
-      phone: '0655443322',
-      orders_count: 3,
-      total_spent: 240,
-      last_order_at: new Date(now - 40 * 60 * 1000).toISOString(),
-      notes: 'Client Atlas Garden Casablanca',
-      marketing_consent: true,
-      created_at: new Date(now - 10 * 86400 * 1000).toISOString(),
-    },
-  ];
-}
-
-function getInitialEvents(): MenuEventRecord[] {
-  const now = Date.now();
-  const bizId = '00000000-0000-4000-8000-000000000001';
-  const list: MenuEventRecord[] = [];
-  const sampleTables = ['1', '3', '5', '5', 'Terrasse 1', '2', '5', '8', null];
-  for (let i = 0; i < 36; i++) {
-    const dayOffset = i % 7;
-    const hourOffset = 9 + (i % 12);
-    const d = new Date(now - dayOffset * 86400 * 1000);
-    d.setHours(hourOffset, (i * 7) % 60, 0, 0);
-    list.push({
-      id: `ev-${i}`,
-      business_id: bizId,
-      type: i % 4 === 0 ? 'qr_scan' : 'view',
-      table_label: sampleTables[i % sampleTables.length],
-      created_at: d.toISOString(),
-    });
-  }
-  return list;
-}
-
 export function loadLocalOrders(): OrderRecord[] {
-  if (typeof window === 'undefined') return getInitialOrders();
+  if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEYS.orders);
-    if (!raw) {
-      const initial = getInitialOrders();
-      window.localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(raw) as OrderRecord[];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as OrderRecord[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return getInitialOrders();
+    return [];
   }
 }
 
@@ -499,17 +223,14 @@ export function saveLocalOrders(orders: OrderRecord[]): void {
 }
 
 export function loadLocalCustomers(): CustomerRecord[] {
-  if (typeof window === 'undefined') return getInitialCustomers();
+  if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEYS.customers);
-    if (!raw) {
-      const initial = getInitialCustomers();
-      window.localStorage.setItem(STORAGE_KEYS.customers, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(raw) as CustomerRecord[];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CustomerRecord[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return getInitialCustomers();
+    return [];
   }
 }
 
@@ -523,17 +244,14 @@ export function saveLocalCustomers(customers: CustomerRecord[]): void {
 }
 
 export function loadLocalEvents(): MenuEventRecord[] {
-  if (typeof window === 'undefined') return getInitialEvents();
+  if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEYS.events);
-    if (!raw) {
-      const initial = getInitialEvents();
-      window.localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(raw) as MenuEventRecord[];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as MenuEventRecord[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return getInitialEvents();
+    return [];
   }
 }
 
@@ -899,39 +617,6 @@ export async function placePublicOrder(
 // AUTHENTICATION & STRICT RLS ISOLATION HELPERS
 // ============================================================================
 
-const DEMO_ACCOUNTS: Record<
-  string,
-  { password: string; session: AuthUserSession }
-> = {
-  'owner@mymenu.ma': {
-    password: 'demo1234',
-    session: {
-      id: 'owner-demo-uid',
-      email: 'owner@mymenu.ma',
-      isAdmin: false,
-      ownedBusinessSlugs: ['demo'],
-    },
-  },
-  'casa@mymenu.ma': {
-    password: 'demo1234',
-    session: {
-      id: 'owner-casa-uid',
-      email: 'casa@mymenu.ma',
-      isAdmin: false,
-      ownedBusinessSlugs: ['atlas-garden'],
-    },
-  },
-  'admin@mymenu.ma': {
-    password: 'admin1234',
-    session: {
-      id: 'admin-super-uid',
-      email: 'admin@mymenu.ma',
-      isAdmin: true,
-      ownedBusinessSlugs: ['demo', 'atlas-garden'],
-    },
-  },
-};
-
 export function getCurrentSession(): AuthUserSession | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -947,88 +632,49 @@ export async function signInWithEmailPassword(
   email: string,
   password: string
 ): Promise<AuthUserSession> {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('CONFIG_MISSING');
+  }
+
   const cleanEmail = email.trim().toLowerCase();
-
-  // 1. If Supabase is configured, try real Supabase Auth first
-  if (supabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
-    });
-    if (!error && data.user) {
-      const uid = data.user.id;
-      const { data: adminRow } = await supabase
-        .from('admins')
-        .select('user_id')
-        .eq('user_id', uid)
-        .maybeSingle();
-
-      const isAdmin = Boolean(adminRow);
-      const { data: bizRows } = await supabase
-        .from('businesses')
-        .select('slug')
-        .or(isAdmin ? 'is_active.eq.true,is_active.eq.false' : `owner_id.eq.${uid}`);
-
-      const slugs = (bizRows || []).map((r: { slug: string }) => r.slug);
-      const session: AuthUserSession = {
-        id: uid,
-        email: data.user.email || cleanEmail,
-        isAdmin,
-        ownedBusinessSlugs: slugs.length > 0 ? slugs : ['demo'],
-      };
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-      }
-      broadcastChange('auth_changed', session);
-      return session;
-    }
+  if (!cleanEmail || !password) {
+    throw new Error('INVALID_CREDENTIALS');
   }
 
-  // 2. Check local businesses for dynamically created owners or built-in demo accounts
-  const demoAccount = DEMO_ACCOUNTS[cleanEmail];
-  if (demoAccount && demoAccount.password === password) {
-    const businesses = loadLocalBusinesses();
-    const dynamicOwned = businesses
-      .filter(
-        (b) =>
-          b.ownerId === demoAccount.session.id ||
-          (b.ownerEmail && b.ownerEmail.toLowerCase() === cleanEmail)
-      )
-      .map((b) => b.slug);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: cleanEmail,
+    password,
+  });
 
-    const session: AuthUserSession = {
-      ...demoAccount.session,
-      ownedBusinessSlugs: demoAccount.session.isAdmin
-        ? businesses.map((b) => b.slug)
-        : Array.from(new Set([...demoAccount.session.ownedBusinessSlugs, ...dynamicOwned])),
-    };
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-    }
-    broadcastChange('auth_changed', session);
-    return session;
+  if (error || !data.user) {
+    throw new Error('INVALID_CREDENTIALS');
   }
 
-  // 3. Also allow owners created via Super Admin "New client" form to sign in with `demo1234`
-  const businesses = loadLocalBusinesses();
-  const matchedBiz = businesses.filter(
-    (b) => b.ownerEmail && b.ownerEmail.toLowerCase() === cleanEmail
-  );
-  if (matchedBiz.length > 0 && password === 'demo1234') {
-    const session: AuthUserSession = {
-      id: matchedBiz[0].ownerId || `owner-${matchedBiz[0].slug}`,
-      email: cleanEmail,
-      isAdmin: false,
-      ownedBusinessSlugs: matchedBiz.map((b) => b.slug),
-    };
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-    }
-    broadcastChange('auth_changed', session);
-    return session;
-  }
+  const uid = data.user.id;
+  const { data: adminRow } = await supabase
+    .from('admins')
+    .select('user_id')
+    .eq('user_id', uid)
+    .maybeSingle();
 
-  throw new Error('INVALID_CREDENTIALS');
+  const isAdmin = Boolean(adminRow);
+  const { data: bizRows } = await supabase
+    .from('businesses')
+    .select('slug')
+    .or(isAdmin ? 'is_active.eq.true,is_active.eq.false' : `owner_id.eq.${uid}`);
+
+  const slugs = (bizRows || []).map((r: { slug: string }) => r.slug);
+  const session: AuthUserSession = {
+    id: uid,
+    email: data.user.email || cleanEmail,
+    isAdmin,
+    ownedBusinessSlugs: slugs,
+  };
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
+  }
+  broadcastChange('auth_changed', session);
+  return session;
 }
 
 export async function signOutUser(): Promise<void> {
@@ -1048,9 +694,10 @@ export async function signOutUser(): Promise<void> {
 export async function requestPasswordReset(email: string): Promise<void> {
   const cleanEmail = email.trim().toLowerCase();
   if (!cleanEmail) throw new Error('Email required');
-  if (supabase) {
-    await supabase.auth.resetPasswordForEmail(cleanEmail);
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('CONFIG_MISSING');
   }
+  await supabase.auth.resetPasswordForEmail(cleanEmail);
 }
 
 /**

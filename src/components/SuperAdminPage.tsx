@@ -29,7 +29,6 @@ import {
   adminSetBusinessActive,
   adminAssignOwnerEmail,
   updateBusinessConfig,
-  signInWithEmailPassword,
   signOutUser,
   subscribeToRealtimeChanges,
   type AuthUserSession,
@@ -98,7 +97,7 @@ export const SuperAdminPage: React.FC = () => {
         {
           name: newName,
           slug: newSlug,
-          ownerEmail: newOwnerEmail || `${newSlug}@mymenu.ma`,
+          ownerEmail: newOwnerEmail.trim(),
           tableCount: newTableCount,
         },
         session
@@ -144,25 +143,18 @@ export const SuperAdminPage: React.FC = () => {
             dans la table <code className="font-mono">public.admins</code>.
           </p>
           <div className="space-y-2.5 pt-2">
-            <button
-              type="button"
-              onClick={async () => {
-                const adminSess = await signInWithEmailPassword(
-                  'admin@mymenu.ma',
-                  'admin1234'
-                );
-                setSession(adminSess);
-              }}
-              className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-extrabold text-white shadow-xs cursor-pointer"
+            <Link
+              to="/login?redirect=/admin"
+              className="block w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-extrabold text-white shadow-xs"
               style={{ backgroundColor: config.colors.primary }}
             >
-              Activer la session Super Admin (admin@mymenu.ma)
-            </button>
+              Se connecter
+            </Link>
             <Link
-              to="/dashboard"
+              to="/"
               className="block w-full py-2.5 px-4 rounded-2xl bg-neutral-100 text-xs font-bold text-neutral-700"
             >
-              Retour au Dashboard Restaurant
+              Retour à l’accueil
             </Link>
           </div>
         </div>
@@ -293,7 +285,7 @@ export const SuperAdminPage: React.FC = () => {
                 dir="ltr"
                 value={newOwnerEmail}
                 onChange={(e) => setNewOwnerEmail(e.target.value)}
-                placeholder="contact@cafemajorelle.ma"
+                placeholder="name@restaurant.com"
                 className="w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs"
               />
             </div>
@@ -393,7 +385,7 @@ export const SuperAdminPage: React.FC = () => {
                         <span>•</span>
                         <span dir="ltr">
                           <strong>Owner:</strong>{' '}
-                          {biz.ownerEmail || `${biz.slug}@mymenu.ma`}
+                          {biz.ownerEmail || '—'}
                         </span>
                         <span>•</span>
                         <span>
@@ -468,7 +460,7 @@ export const SuperAdminPage: React.FC = () => {
                       onClick={async () => {
                         const nextEmail = window.prompt(
                           `E-mail du propriétaire pour ${biz.name} :`,
-                          biz.ownerEmail || `${biz.slug}@mymenu.ma`
+                          biz.ownerEmail || ''
                         );
                         if (nextEmail && nextEmail.trim()) {
                           await adminAssignOwnerEmail(

@@ -1,10 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const metaEnv =
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env ||
-  {};
-const rawUrl = metaEnv.VITE_SUPABASE_URL?.trim() || '';
-const rawAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY?.trim() || '';
+const rawUrl = import.meta.env?.VITE_SUPABASE_URL?.trim() || '';
+const rawAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim() || '';
 
 export const isSupabaseConfigured: boolean =
   Boolean(rawUrl) &&
